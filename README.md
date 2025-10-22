@@ -5,17 +5,19 @@
 [![Snowflake](https://img.shields.io/badge/Snowflake-Data%20Warehouse-blue)](https://www.snowflake.com/)
 [![React](https://img.shields.io/badge/React-18+-61dafb)](https://reactjs.org/)
 
+**Developed by [AI Applied](https://aiapplied.com)**
+
 ## Overview
 
 The Smart Manufacturing Data Hub (SMDH) is a cloud-native, multi-tenant IoT platform designed to support 30-40 small and medium-sized enterprises (SMEs) in manufacturing. The platform integrates three critical use cases while maintaining a unified, scalable infrastructure.
 
-### 🎯 Supported Use Cases
+### Supported Use Cases
 
 1. **Machine Utilization Analytics (MUA)** - Real-time monitoring of machine performance, energy consumption, and operational efficiency
 2. **Air Quality Management Analytics (AQMA)** - Environmental monitoring to ensure worker safety and regulatory compliance  
 3. **Job Location Tracking** - RFID/barcode-based tracking of products through manufacturing workflows
 
-## 🏗️ Architecture
+## Architecture
 
 ### Key Platform Metrics
 
@@ -49,7 +51,7 @@ The Smart Manufacturing Data Hub (SMDH) is a cloud-native, multi-tenant IoT plat
 - **Power BI Embedded** for advanced analytics
 - **Amazon SageMaker** for machine learning
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 smdh/
@@ -83,7 +85,7 @@ smdh/
     └── utilities/                 # Utility scripts
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -152,7 +154,7 @@ smdh/
    python deploy_pipelines.py
    ```
 
-## 📊 Data Sources
+## Data Sources
 
 ### Machine Utilization Monitoring (MUA)
 - **Power Monitoring Sensors**: Real-time electrical current and power consumption (1Hz)
@@ -170,7 +172,7 @@ smdh/
 - **Barcode Scanners**: Manual and automated product tracking
 - **Location Tags**: Track products through manufacturing stages
 
-## 🔐 Security & Compliance
+## Security & Compliance
 
 - **Encryption**: TLS 1.2+ in transit, KMS encryption at rest
 - **Authentication**: AWS Cognito with MFA support
@@ -178,14 +180,14 @@ smdh/
 - **Compliance**: GDPR, ISO 27001, SOC 2 Type II ready
 - **Network Security**: VPC with private subnets, WAF protection
 
-## 📈 Monitoring & Observability
+## Monitoring & Observability
 
 - **CloudWatch**: Centralized logging and metrics
 - **X-Ray**: Distributed tracing
 - **Grafana**: Real-time monitoring dashboards
 - **PagerDuty**: Incident management and alerting
 
-## 🧪 Testing
+## Testing
 
 ```bash
 # Run all tests
@@ -201,14 +203,14 @@ cd data-pipelines
 python -m pytest tests/
 ```
 
-## 📚 Documentation
+## Documentation
 
 - [Architecture Guide](docs/architecture/SMDH_Architecture_Complete_Guide.md)
 - [API Documentation](docs/api/README.md)
 - [Deployment Guide](docs/deployment/README.md)
 - [Use Case Documentation](use-cases/README.md)
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
@@ -223,38 +225,38 @@ python -m pytest tests/
 - Update documentation for any API changes
 - Ensure all tests pass before submitting PRs
 
-## 📋 Roadmap
+## Roadmap
 
 ### Phase 1 (Current)
-- ✅ Core infrastructure setup
-- ✅ Basic MUA implementation
-- ✅ AQMA foundation
-- ✅ Job tracking prototype
+- Core infrastructure setup
+- Basic MUA implementation
+- AQMA foundation
+- Job tracking prototype
 
-### Phase 2 (Q1 2024)
-- 🔄 Advanced analytics dashboards
-- 🔄 Machine learning models
-- 🔄 Mobile application
-- 🔄 API marketplace
+### Phase 2 (Q1 2026)
+- Advanced analytics dashboards
+- Machine learning models
+- Mobile application
+- API marketplace
 
-### Phase 3 (Q2 2024)
-- 📅 Predictive maintenance
-- 📅 Supply chain optimization
-- 📅 Computer vision integration
-- 📅 Voice assistant integration
+### Phase 3 (Q2 2026)
+- Predictive maintenance
+- Supply chain optimization
+- Computer vision integration
+- Voice assistant integration
 
-## 🆘 Support
+## Support
 
 - **Documentation**: [Wiki](https://github.com/yourusername/smdh/wiki)
 - **Issues**: [GitHub Issues](https://github.com/yourusername/smdh/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/yourusername/smdh/discussions)
 - **Email**: smdh-support@example.com
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - AWS for cloud infrastructure services
 - Snowflake for data warehouse capabilities
@@ -263,4 +265,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Built with ❤️ for the manufacturing industry**
+**Built by AI Applied for the manufacturing industry**
