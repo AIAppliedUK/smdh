@@ -1,0 +1,257 @@
+<mxfile host="app.diagrams.net" modified="2025-01-28T00:00:00.000Z" agent="Claude Code" version="24.0.0">
+  <diagram name="Option C: AWS IoT SiteWise Architecture" id="option-c-sitewise">
+    <mxGraphModel dx="1600" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="SMDH Option C: AWS IoT SiteWise-Based Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=18;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="400" y="20" width="800" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Cost Badge -->
+        <mxCell id="cost-badge" value="Monthly Cost: $6,334 (30 tenants) ✅ CORRECTED" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff4e6;strokeColor=#ff9900;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="20" width="300" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Complexity Badge -->
+        <mxCell id="complexity-badge" value="Complexity: Medium-High (8-10 services)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1250" y="20" width="300" height="40" as="geometry" />
+        </mxCell>
+
+        <!-- Layer 1: Data Sources -->
+        <mxCell id="layer-sources" value="DATA SOURCES" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1f5fe;strokeColor=#01579b;verticalAlign=top;fontStyle=1;fontSize=14;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="80" width="1500" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="source-machines" value="Machine Sensors&#xa;(1Hz MQTT)&#xa;→ SiteWise" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="100" y="120" width="160" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="source-energy" value="Energy Monitors&#xa;(15s Modbus)&#xa;→ SiteWise Gateway" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="290" y="120" width="170" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="source-air" value="Air Quality Sensors&#xa;(1min MQTT)&#xa;→ SiteWise" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="490" y="120" width="160" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="source-rfid" value="RFID/Barcode&#xa;(Events)&#xa;→ Timestream" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="680" y="120" width="160" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="volume-label" value="Time-series: 2.0M-3.0M rows/day | Events: 600K-1.2M/day" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=11;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="900" y="130" width="400" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Layer 2: Ingestion & Routing -->
+        <mxCell id="layer-ingestion" value="INGESTION &amp; ROUTING LAYER (Dual Path)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#7b1fa2;verticalAlign=top;fontStyle=1;fontSize=14;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="200" width="1500" height="140" as="geometry" />
+        </mxCell>
+
+        <mxCell id="iot-core" value="AWS IoT Core&#xa;MQTT Broker&#xa;X.509 Auth" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="250" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sitewise-gateway" value="SiteWise Gateway&#xa;(On-premises)&#xa;OPC-UA/Modbus" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d4edda;strokeColor=#28a745;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="270" y="250" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="iot-rules" value="IoT Rules Engine&#xa;Route by Data Type&#xa;Tag enrichment" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="460" y="250" width="150" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="kinesis-events" value="Kinesis Streams&#xa;(Event Path)&#xa;RFID/Barcode" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="640" y="250" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lambda-events" value="Lambda&#xa;Event Handler&#xa;→ Timestream" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="810" y="250" width="130" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Layer 3: IoT SiteWise Platform -->
+        <mxCell id="layer-sitewise" value="AWS IoT SITEWISE (Time-Series Asset Platform)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d4edda;strokeColor=#28a745;verticalAlign=top;fontStyle=1;fontSize=14;strokeWidth=3;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="360" width="700" height="180" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sitewise-ingestion" value="SiteWise&#xa;Data Ingestion&#xa;Time-series store" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c3e6cb;strokeColor=#28a745;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="410" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sitewise-assets" value="Asset Models&#xa;• Machines&#xa;• Energy meters&#xa;• Air sensors" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c3e6cb;strokeColor=#28a745;fontSize=10;align=left;" vertex="1" parent="1">
+          <mxGeometry x="250" y="410" width="140" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sitewise-compute" value="Compute&#xa;Expressions&#xa;• Aggregations&#xa;• Formulas&#xa;• Metrics" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c3e6cb;strokeColor=#28a745;fontSize=10;align=left;" vertex="1" parent="1">
+          <mxGeometry x="420" y="410" width="140" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="sitewise-monitor" value="SiteWise Monitor&#xa;(Limited use)&#xa;⚠️ Can't white-label" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8d7da;strokeColor=#dc3545;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="590" y="420" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Layer 4: Event Data Store -->
+        <mxCell id="layer-timestream" value="AMAZON TIMESTREAM (Event Data)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e8daef;strokeColor=#8e44ad;verticalAlign=top;fontStyle=1;fontSize=14;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="770" y="360" width="380" height="180" as="geometry" />
+        </mxCell>
+
+        <mxCell id="timestream-db" value="Timestream DB&#xa;Job tracking events&#xa;RFID scans" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5c6e0;strokeColor=#8e44ad;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="800" y="410" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="timestream-query" value="Timestream Query&#xa;SQL analytics&#xa;Event tracking" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5c6e0;strokeColor=#8e44ad;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="980" y="410" width="140" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Layer 5: Application State & Config -->
+        <mxCell id="layer-application" value="APPLICATION STATE &amp; CONFIGURATION" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3cd;strokeColor=#ffc107;verticalAlign=top;fontStyle=1;fontSize=14;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="560" width="1500" height="120" as="geometry" />
+        </mxCell>
+
+        <mxCell id="dynamodb" value="DynamoDB&#xa;• Tenant config&#xa;• Device registry&#xa;• User prefs&#xa;• Tag mappings" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#fbc02d;fontSize=10;align=left;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="605" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="api-gateway" value="API Gateway&#xa;Multi-tenant&#xa;authorization" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c5e1a5;strokeColor=#558b2f;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="290" y="605" width="130" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lambda-api" value="Lambda&#xa;Tenant isolation&#xa;Tag filtering" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="450" y="605" width="130" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cognito" value="Cognito&#xa;User Pools&#xa;SSO/MFA" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffccbc;strokeColor=#bf360c;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="610" y="605" width="120" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="s3-archive" value="S3&#xa;Cold storage&#xa;Archive" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="760" y="605" width="110" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Layer 6: Frontend & Analytics -->
+        <mxCell id="layer-frontend" value="FRONTEND &amp; ANALYTICS LAYER" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f1f8e9;strokeColor=#558b2f;verticalAlign=top;fontStyle=1;fontSize=14;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="50" y="700" width="1500" height="140" as="geometry" />
+        </mxCell>
+
+        <mxCell id="react-app" value="Custom React App&#xa;White-labeled&#xa;SiteWise API calls" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c5e1a5;strokeColor=#558b2f;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="750" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="amplify" value="AWS Amplify&#xa;Hosting&#xa;CI/CD" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b2dfdb;strokeColor=#00695c;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="290" y="750" width="130" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="quicksight" value="QuickSight&#xa;Embedded&#xa;Analytics" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b2dfdb;strokeColor=#00695c;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="450" y="750" width="120" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="lookout" value="Lookout for&#xa;Equipment&#xa;ML Predictions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ce93d8;strokeColor=#6a1b9a;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="600" y="750" width="130" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cloudwatch" value="CloudWatch&#xa;Monitoring&#xa;Alerts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d1c4e9;strokeColor=#512da8;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="760" y="750" width="120" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Key Characteristics Box -->
+        <mxCell id="characteristics" value="KEY CHARACTERISTICS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#f57f17;verticalAlign=top;fontStyle=1;fontSize=12;align=left;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="360" width="350" height="320" as="geometry" />
+        </mxCell>
+
+        <mxCell id="char-text" value="✅ Strengths:&#xa;• Native asset modeling (hierarchies)&#xa;• Built-in time-series aggregations&#xa;• Managed IoT platform&#xa;• Real-time latency (&lt;1s)&#xa;• OPC-UA/Modbus support&#xa;• Compute expressions (no Lambda)&#xa;&#xa;⚠️ Challenges:&#xa;• NOT designed for multi-tenant SaaS&#xa;• Tag-based isolation (manual)&#xa;• Can't white-label SiteWise Monitor&#xa;• Most expensive option ($211/tenant)&#xa;• Requires Timestream for events&#xa;• Complex tenant data segregation&#xa;• 28-week implementation&#xa;&#xa;💰 Cost: $6,334/month (CORRECTED)&#xa;👥 Team: 3-4 engineers&#xa;⏱️ Timeline: 28 weeks&#xa;🎯 Best for: SiteWise expertise teams" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1190" y="385" width="330" height="285" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows -->
+        <mxCell id="arrow1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#28a745;endArrow=classic;endFill=1;" edge="1" parent="1" source="source-machines" target="iot-core">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arrow2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#28a745;endArrow=classic;endFill=1;" edge="1" parent="1" source="source-energy" target="sitewise-gateway">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arrow3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#b85450;endArrow=classic;endFill=1;" edge="1" parent="1" source="source-rfid" target="iot-rules">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="760" y="190" />
+              <mxPoint x="535" y="190" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="arrow4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#28a745;endArrow=classic;endFill=1;" edge="1" parent="1" source="iot-core" target="sitewise-ingestion">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="170" y="340" />
+              <mxPoint x="150" y="340" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="arrow5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#28a745;endArrow=classic;endFill=1;" edge="1" parent="1" source="sitewise-gateway" target="sitewise-ingestion">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="350" y="340" />
+              <mxPoint x="150" y="340" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="arrow6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#d6b656;endArrow=classic;endFill=1;" edge="1" parent="1" source="iot-rules" target="kinesis-events">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arrow7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#d79b00;endArrow=classic;endFill=1;" edge="1" parent="1" source="kinesis-events" target="lambda-events">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arrow8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#8e44ad;endArrow=classic;endFill=1;" edge="1" parent="1" source="lambda-events" target="timestream-db">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="875" y="340" />
+              <mxPoint x="870" y="340" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="arrow9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#28a745;endArrow=classic;endFill=1;" edge="1" parent="1" source="sitewise-ingestion" target="sitewise-assets">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arrow10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#28a745;endArrow=classic;endFill=1;" edge="1" parent="1" source="sitewise-assets" target="sitewise-compute">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arrow11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#558b2f;endArrow=classic;endFill=1;" edge="1" parent="1" source="sitewise-compute" target="react-app">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="490" y="720" />
+              <mxPoint x="180" y="720" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="arrow12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#8e44ad;endArrow=classic;endFill=1;" edge="1" parent="1" source="timestream-db" target="timestream-query">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arrow13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#558b2f;endArrow=classic;endFill=1;" edge="1" parent="1" source="timestream-query" target="react-app">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1050" y="720" />
+              <mxPoint x="180" y="720" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Warning Icon -->
+        <mxCell id="warning" value="⚠️ Multi-tenancy requires&#xa;custom tag-based isolation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3cd;strokeColor=#ffc107;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="920" y="605" width="210" height="60" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
