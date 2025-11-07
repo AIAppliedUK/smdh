@@ -1,6 +1,6 @@
-<mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/28.2.5 Chrome/138.0.7204.251 Electron/37.6.1 Safari/537.36" version="28.2.5">
+<mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/28.2.8 Chrome/140.0.7339.240 Electron/38.4.0 Safari/537.36" version="28.2.8">
   <diagram name="SMDH Option B - Snowflake-Centric Architecture" id="snowflake-architecture">
-    <mxGraphModel dx="1502" dy="1226" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+    <mxGraphModel dx="1927" dy="1216" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -96,9 +96,6 @@
         </mxCell>
         <mxCell id="snowsight" value="Snowsight&#xa;Ad-hoc analysis&#xa;SQL worksheets" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6d0de;strokeColor=#996185;" parent="analytics-layer" vertex="1">
           <mxGeometry x="20" y="440" width="240" height="60" as="geometry" />
-        </mxCell>
-        <mxCell id="mobile-apps" value="Mobile Apps&#xa;Dashboards&#xa;Alerts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6d0de;strokeColor=#996185;" parent="analytics-layer" vertex="1">
-          <mxGeometry x="20" y="520" width="240" height="60" as="geometry" />
         </mxCell>
         <mxCell id="arrow1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#00796B;entryX=0;entryY=0.25;entryDx=0;entryDy=0;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" parent="1" source="machine-sensors" target="iot-core" edge="1">
           <mxGeometry relative="1" as="geometry">

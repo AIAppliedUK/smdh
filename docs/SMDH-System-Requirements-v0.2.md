@@ -1,39 +1,46 @@
 # Smart Manufacturing Data Hub (SMDH) - System Requirements Document
 
 ## Document Information
-- **Version**: 1.1 (Requirements Clarification Update)
-- **Date**: November 2025
-- **Status**: Under Review - Validation Required
+- **Version**: 0.2 (Architectural Review Update)
+- **Date**: November 2, 2025
+- **Status**: Updated Based on Architectural Review Feedback
 - **Owner**: AI Applied
 - **Classification**: Internal Use
-- **Change Summary**: Removed arbitrary budget targets and timing constraints; replaced with consumption-based cost model and use-case-appropriate performance requirements
+- **Change Summary**:
+  - v1.1 (Nov 1): Removed arbitrary budget targets and timing constraints
+  - v0.2 (Nov 2): Updated based on comprehensive architectural review feedback including:
+    - Split latency SLAs (operator dashboards ≤60s vs safety alerts ≤5-10s)
+    - Enhanced security and operational requirements
+    - Added portal assumptions and authentication requirements
+    - Clarified multi-tenancy isolation requirements
+    - Added observability and monitoring requirements
 
 ---
 
 ## 1. Executive Summary
 
-The Smart Manufacturing Data Hub (SMDH) is a cloud-native, multi-tenant IoT platform designed to empower small and medium-sized manufacturing enterprises with real-time visibility into their operations. The system enables companies to self-register, onboard their manufacturing sites and IoT devices, and immediately start collecting and analysing data through intuitive dashboards.
+The Smart Manufacturing Data Hub (SMDH) is a cloud-based platform that gives small and medium-sized manufacturing companies real-time visibility of their operations. Companies can register themselves, add their sites and devices, and immediately start collecting and viewing their data through dashboards.
 
 ### Core Mission
 
-Provide a comprehensive, self-service platform where manufacturing companies can independently manage their entire data journey - from device registration to dashboard insights - without requiring technical expertise or external support.
+Let manufacturing companies manage their own data from start to finish—device setup to insights—without needing technical knowledge or external help.
 
 ---
 
 ## 2. Guiding Principles
 
-The SMDH platform is built on two fundamental principles that drive all system design and functionality:
+The SMDH platform is built on two core principles:
 
 ### Principle 1: Self-Service Company Onboarding
 
-**Companies must be able to independently register and configure their entire manufacturing infrastructure through an intuitive portal.**
+**Companies must be able to register and set up their manufacturing infrastructure themselves through a simple portal.**
 
-This principle ensures that:
-- Manufacturing companies can sign up and create accounts without sales intervention
-- Site administrators can register multiple manufacturing sites/facilities
-- Users can configure IoT devices, metres, and sensors without technical knowledge
-- Administrative roles can be assigned and managed by the company itself
-- The onboarding experience is guided, streamlined, and requires minimal technical expertise
+What this means:
+- Companies can sign up without talking to sales
+- Site administrators can register multiple sites
+- Users can set up devices and sensors without technical knowledge
+- Companies can assign and manage their own user roles
+- The setup process is guided and simple
 
 **Key Requirements:**
 - Self-service registration workflow with company verification
@@ -45,15 +52,15 @@ This principle ensures that:
 
 ### Principle 2: Automated Data Collection and Visualisation
 
-**Once registered, the system must automatically receive, store, and visualise data from configured devices without manual intervention.**
+**Once registered, the system must automatically receive, store, and display data from configured devices without manual work.**
 
-This principle ensures that:
+What this means:
 - Data flows automatically from registered devices to the platform
-- Historical data is stored securely with appropriate retention policies
-- Pre-built dashboards are automatically provisioned based on device types
-- Companies can view their data immediately upon device connection
-- The system handles all data processing, transformation, and quality checks
-- Dashboards update in real-time or near-real-time without user action
+- Historical data is stored securely
+- Dashboards are created automatically based on device types
+- Companies can view their data as soon as devices connect
+- The system handles all data processing and quality checks
+- Dashboards update automatically
 
 **Key Requirements:**
 - Automated data ingestion pipelines supporting multiple protocols (MQTT, HTTP, LoRaWAN)
@@ -67,41 +74,43 @@ This principle ensures that:
 
 ## 3. Business Requirements
 
-### 3.1 Platform Objectives
+### 3.1 Platform Targets
 
-| Objective | Target | Priority |
+| What | Target | Priority |
 |-----------|--------|----------|
-| Support SME manufacturing companies | 30-40 companies (Year 1) | High |
-| Concurrent active users | 20-40 users | High |
-| Daily data processing capacity | 2.6M-3.9M rows/day | High |
-| Platform availability | 99.9% uptime SLA | Critical |
-| Data analytics latency | <5 minutes for KPIs | High |
-| Alert response latency | Appropriate for alert criticality (see FR-11) | High |
-| Dashboard provisioning time | <5 minutes after device registration | High |
-| Onboarding completion time | <30 minutes for basic setup | Medium |
+| Support SME manufacturing companies | 30-40 companies (Year 1), growing to 100 | High |
+| Users logged in at once | 20-40 users | High |
+| Daily data processing | 2.6M-3.9M rows/day per company | High |
+| Uptime | 99.9% (≤43 minutes downtime/month) | Critical |
+| Dashboard data refresh for analytics | Within 5 minutes | High |
+| Safety/critical alerts | Within 5-10 seconds | Medium |
+| Operational alerts | Within 60 seconds | High |
+| Operator dashboard refresh | Within 60 seconds for most uses | High |
+| Dashboard creation | Within 5 minutes after device registration | High |
+| Basic setup completion | Within 30 minutes | Medium |
 
 ### 3.2 Target Users
 
-**Primary Users:**
-1. **Company Administrators** - Register company, manage sites, configure billing
-2. **Site Administrators** - Register devices, manage site users, configure dashboards
-3. **Operators** - View dashboards, receive alerts, generate reports
+**Who will use this:**
+1. **Company Administrators** - Register company, manage sites, handle billing
+2. **Site Administrators** - Register devices, manage site users, set up dashboards
+3. **Operators** - View dashboards, get alerts, create reports
 4. **Viewers** - Read-only access to dashboards and reports
 
-**User Characteristics:**
-- Limited technical expertise in IoT or cloud platforms
-- Familiar with manufacturing operations and KPIs
-- Need mobile and desktop access to dashboards
-- Require intuitive, self-explanatory interfaces
-- Value speed and simplicity over advanced configuration
+**What users are like:**
+- Not technical experts in IoT or cloud
+- Know their manufacturing operations
+- Need access from mobile and desktop
+- Need simple, clear interfaces
+- Want speed and simplicity over advanced options
 
 ### 3.3 Business Constraints
 
-- **Cost Efficiency**: Infrastructure costs must be proportional to actual data consumption and scale linearly with tenant count
-- **Geographic Coverage**: Initial deployment in UK/EU (data residency in eu-west-2)
-- **Compliance**: GDPR, ISO 27001, SOC 2 Type II alignment
-- **Scalability**: Must scale to 100+ companies within 3 years
-- **Time to Market**: Phase 1 deployment target (to be determined based on architecture selection)
+- **Cost**: Infrastructure costs must match actual usage and grow linearly with number of companies
+- **Location**: Initial deployment in UK/EU (data stored in London region)
+- **Compliance**: Must meet GDPR, ISO 27001, SOC 2 Type II standards
+- **Growth**: Must support 100+ companies within 3 years
+- **Launch**: Phase 1 delivery date to be set after architecture selection
 
 ---
 
@@ -112,52 +121,52 @@ This principle ensures that:
 #### FR-1: Company Registration
 **Priority: Critical**
 
-The system SHALL provide a self-service company registration process that:
-- REQ-1.1: Allows new companies to create accounts with company details (name, address, industry, contact)
-- REQ-1.2: Verifies company email addresses through automated confirmation
-- REQ-1.3: Requires password meeting security standards (12+ chars, complexity)
-- REQ-1.4: Supports multi-factor authentication (MFA) for administrator accounts
-- REQ-1.5: Provides terms of service and privacy policy acceptance
-- REQ-1.6: Creates a unique tenant identifier for complete data isolation
-- REQ-1.7: Provisions default company administrator account
-- REQ-1.8: Generates welcome email with onboarding instructions
+The system must let companies register themselves:
+- REQ-1.1: New companies can create accounts with their details (name, address, industry, contact)
+- REQ-1.2: Email addresses are verified automatically
+- REQ-1.3: Passwords must be secure (12+ characters, mixed case, numbers, symbols)
+- REQ-1.4: Multi-factor authentication available for administrators
+- REQ-1.5: Terms of service and privacy policy must be accepted
+- REQ-1.6: Each company gets a unique identifier to keep their data separate
+- REQ-1.7: Creates a default administrator account
+- REQ-1.8: Sends a welcome email with setup instructions
 
-**Acceptance Criteria:**
-- Company can complete registration in <10 minutes
-- All required fields are validated in real-time
-- Email verification occurs within 5 minutes
-- Company is immediately active after email confirmation
+**Must achieve:**
+- Registration completed in under 10 minutes
+- All fields checked immediately as typed
+- Email verification within 5 minutes
+- Company active immediately after email confirmation
 
 #### FR-2: Manufacturing Site Registration
 **Priority: Critical**
 
-The system SHALL enable companies to register multiple manufacturing sites:
-- REQ-2.1: Support registration of unlimited manufacturing sites per company
+The system must let companies register multiple sites:
+- REQ-2.1: Unlimited sites per company
 - REQ-2.2: Capture site details (name, address, timezone, operating hours)
-- REQ-2.3: Allow site-specific configuration and preferences
-- REQ-2.4: Support site hierarchy (e.g., regions, facilities, departments)
-- REQ-2.5: Enable archiving/deactivating sites without data loss
-- REQ-2.6: Provide site-level reporting and analytics
-- REQ-2.7: Support geographic visualisation of site locations
+- REQ-2.3: Site-specific settings
+- REQ-2.4: Site hierarchy (regions, facilities, departments)
+- REQ-2.5: Archive/deactivate sites without losing data
+- REQ-2.6: Site-level reporting
+- REQ-2.7: Geographic visualisation of sites
 
-**Acceptance Criteria:**
-- Sites can be registered in <5 minutes
-- Site data is immediately available for device registration
-- Changes to site configuration take effect within 1 minute
+**Must achieve:**
+- Sites registered in under 5 minutes
+- Site available for device registration immediately
+- Configuration changes take effect within 1 minute
 
 #### FR-3: User and Role Management
 **Priority: Critical**
 
-The system SHALL provide comprehensive user management capabilities:
-- REQ-3.1: Support user roles: Company Admin, Site Admin, Operator, Viewer
-- REQ-3.2: Allow Company Admins to invite users via email
-- REQ-3.3: Enable role-based access control (RBAC) for all resources
-- REQ-3.4: Support user assignment to specific sites
-- REQ-3.5: Provide user activity audit logs
-- REQ-3.6: Allow users to update their own profiles and preferences
-- REQ-3.7: Support Single Sign-On (SSO) via SAML 2.0
-- REQ-3.8: Enable session timeout and concurrent session limits
-- REQ-3.9: Provide password reset and account recovery workflows
+The system must provide user management:
+- REQ-3.1: User roles: Company Admin, Site Admin, Operator, Viewer
+- REQ-3.2: Company Admins can invite users by email
+- REQ-3.3: Role-based access control for all resources
+- REQ-3.4: Users can be assigned to specific sites
+- REQ-3.5: User activity logs
+- REQ-3.6: Users can update their own profiles
+- REQ-3.7: Single Sign-On (SSO) via SAML 2.0
+- REQ-3.8: Session timeout and limits on simultaneous logins
+- REQ-3.9: Password reset and account recovery
 
 **Role Permissions:**
 
@@ -171,17 +180,17 @@ The system SHALL provide comprehensive user management capabilities:
 | Generate reports | ✅ | ✅ | ✅ | ✅ |
 | Manage billing | ✅ | ❌ | ❌ | ❌ |
 
-**Acceptance Criteria:**
-- User invitation emails delivered within 1 minute
+**Must achieve:**
+- Invitation emails sent within 1 minute
 - Role changes take effect immediately
-- Unauthorised access attempts are logged and blocked
+- Blocked access attempts are logged
 
 ### 4.2 Device and Metre Registration
 
 #### FR-4: IoT Device Registration
 **Priority: Critical**
 
-The system SHALL provide a self-service device registration wizard:
+The system must provide a device registration wizard:
 - REQ-4.1: Support registration of various device types:
   - Machine utilisation sensors (power monitors, state sensors)
   - Air quality sensors (CO2, VOC, particulate matter, temperature/humidity)
@@ -198,16 +207,16 @@ The system SHALL provide a self-service device registration wizard:
 - REQ-4.9: Enable device firmware version tracking
 - REQ-4.10: Provide device health monitoring and connectivity status
 
-**Acceptance Criteria:**
-- Device registration completes in <3 minutes per device
-- Generated credentials are immediately valid
-- Devices can connect within 1 minute of registration
+**Must achieve:**
+- Device registration in under 3 minutes per device
+- Credentials work immediately
+- Devices connect within 1 minute of registration
 - Connection status updates in real-time
 
 #### FR-5: Device Configuration and Provisioning
 **Priority: High**
 
-The system SHALL simplify device configuration through templates:
+The system must simplify device setup through templates:
 - REQ-5.1: Provide pre-configured templates for common device types
 - REQ-5.2: Support custom data schemas via JSON/YAML
 - REQ-5.3: Auto-detect device schema from initial data transmission
@@ -217,17 +226,17 @@ The system SHALL simplify device configuration through templates:
 - REQ-5.7: Enable batch configuration updates across device groups
 - REQ-5.8: Support A/B testing of configuration changes
 
-**Acceptance Criteria:**
-- Configuration templates available for 10+ common device types
-- Schema detection accuracy >95%
-- Configuration changes propagate within 1 minute
+**Must achieve:**
+- Templates for 10+ common device types
+- Schema detection accuracy above 95%
+- Configuration changes take effect within 1 minute
 
 ### 4.3 Data Ingestion and Storage
 
 #### FR-6: Automated Data Collection
 **Priority: Critical**
 
-The system SHALL automatically collect data from registered devices:
+The system must automatically collect data from registered devices:
 - REQ-6.1: Support multiple ingestion protocols:
   - MQTT v3.1.1 and v5 (primary for IoT sensors)
   - HTTP REST API (for RFID/barcode scanners)
@@ -248,15 +257,15 @@ The system SHALL automatically collect data from registered devices:
 - Peak throughput: 60 messages/second per device
 - Batch file processing: <5 minutes for 1GB file
 
-**Acceptance Criteria:**
-- Data appears in system within 5 seconds of transmission
-- Zero data loss for successfully transmitted messages
+**Must achieve:**
+- Data appears in system within 5 seconds of sending
+- No data loss for successfully sent messages
 - Failed messages retry automatically up to 3 times
 
 #### FR-7: Data Storage and Retention
 **Priority: Critical**
 
-The system SHALL store all collected data securely:
+The system must store all collected data securely:
 - REQ-7.1: Maintain complete data isolation between tenants
 - REQ-7.2: Store raw, unprocessed data for audit purposes
 - REQ-7.3: Create normalised, query-optimised data views
@@ -276,15 +285,15 @@ The system SHALL store all collected data securely:
 - Growth rate: 10-15 GB per month per company
 - Maximum single object size: 5 GB
 
-**Acceptance Criteria:**
-- Data is queryable within 30 seconds of ingestion
-- Tenant data is completely isolated (verified via audit)
+**Must achieve:**
+- Data can be queried within 30 seconds of arrival
+- Company data is completely isolated (verified by audit)
 - Export requests complete within 15 minutes for 1 year of data
 
 #### FR-8: Data Quality and Validation
 **Priority: High**
 
-The system SHALL ensure data quality automatically:
+The system must check data quality automatically:
 - REQ-8.1: Validate data types and formats against schema
 - REQ-8.2: Detect and flag outliers using statistical methods
 - REQ-8.3: Identify duplicate or missing data points
@@ -295,17 +304,17 @@ The system SHALL ensure data quality automatically:
 - REQ-8.8: Automatically handle timezone conversions
 - REQ-8.9: Detect and correct clock drift in device timestamps
 
-**Acceptance Criteria:**
+**Must achieve:**
 - Data quality checks complete within 1 second per record
-- Quality issues are flagged in real-time
+- Quality issues flagged in real-time
 - Quality reports available daily
 
 ### 4.4 Dashboard and Visualisation
 
-#### FR-9: Automated Dashboard Provisioning
+#### FR-9: Automated Dashboard Creation
 **Priority: Critical**
 
-The system SHALL automatically create dashboards upon device registration:
+The system must automatically create dashboards when devices are registered:
 - REQ-9.1: Auto-provision default dashboards based on device type:
   - Machine Utilisation: OEE, energy consumption, uptime/downtime
   - Air Quality: Real-time readings, compliance status, trend analysis
@@ -350,16 +359,16 @@ The system SHALL automatically create dashboards upon device registration:
 - Job progression timelines (Gantt charts)
 - Inventory level tracking
 
-**Acceptance Criteria:**
-- Dashboards load in <2 seconds
+**Must achieve:**
+- Dashboards load in under 2 seconds
 - Real-time data updates within 5 seconds
-- Mobile dashboards functional on iOS and Android
-- Export generation completes in <30 seconds
+- Dashboards work on iOS and Android
+- Exports complete in under 30 seconds
 
 #### FR-10: Self-Service Reporting
 **Priority: High**
 
-The system SHALL enable users to create custom reports:
+The system must let users create their own reports:
 - REQ-10.1: Provide report builder with drag-and-drop interface
 - REQ-10.2: Support scheduled report generation (daily, weekly, monthly)
 - REQ-10.3: Enable email delivery of reports
@@ -370,17 +379,17 @@ The system SHALL enable users to create custom reports:
 - REQ-10.8: Support multiple output formats (PDF, Excel, CSV, HTML)
 - REQ-10.9: Provide report execution history and audit trail
 
-**Acceptance Criteria:**
-- Report creation takes <10 minutes for non-technical users
-- Scheduled reports deliver within 15 minutes of scheduled time
-- Reports can aggregate data from up to 100 devices
+**Must achieve:**
+- Non-technical users can create reports in under 10 minutes
+- Scheduled reports arrive within 15 minutes of scheduled time
+- Reports can combine data from up to 100 devices
 
 ### 4.5 Alerting and Notifications
 
 #### FR-11: Automated Alert System
 **Priority: High**
 
-The system SHALL provide intelligent alerting capabilities:
+The system must provide alerting:
 - REQ-11.1: Support threshold-based alerts (above/below value)
 - REQ-11.2: Enable anomaly detection using machine learning
 - REQ-11.3: Provide multi-channel notifications:
@@ -411,11 +420,11 @@ The system SHALL provide intelligent alerting capabilities:
 - OEE drops below 70% for 1 hour
 - Predictive maintenance required
 
-**Acceptance Criteria:**
-- Alerts trigger within appropriate timeframe based on alert criticality (see note below)
-- Email notifications deliver within 1 minute
-- SMS notifications deliver within 30 seconds for critical alerts
-- Alert acknowledgement reflects in system within 1 second
+**Must achieve:**
+- Alerts trigger within appropriate time based on criticality (see note below)
+- Email notifications sent within 1 minute
+- SMS notifications sent within 30 seconds for critical alerts
+- Alert acknowledgement shown in system within 1 second
 
 > **⚠️ VALIDATION REQUIRED**: Alert latency requirements (previously specified as <10 seconds) need validation with manufacturing operators to determine actual operational needs. Different alert types may require different latencies:
 > - **Critical safety alerts** (e.g., toxic gas levels): Immediate (<10 seconds may be required)
@@ -426,140 +435,175 @@ The system SHALL provide intelligent alerting capabilities:
 
 ## 5. Non-Functional Requirements
 
-### 5.1 Performance Requirements
+### 5.1 Performance
 
-#### NFR-1: System Responsiveness
-- **Web Portal**: Page load time <2 seconds (95th percentile)
-- **Dashboard Rendering**: Initial load <2 seconds, refresh <500ms
-- **API Response Time**: <200ms for 95% of requests
-- **Data Ingestion Latency**: End-to-end <5 seconds from device to visualisation for standard data flow
-- **Real-Time Monitoring**: Dashboard update frequency appropriate for use case (critical alerts: <10s, operational dashboards: <60s, historical analytics: <5min)
-- **Search Functionality**: Results returned in <1 second for typical queries
+#### NFR-1: How Fast the System Must Be
+- **Web Portal**: Pages load in under 2 seconds (for 95% of users)
+- **Dashboards**: Initial load under 2 seconds, updates under 500ms
+- **API**: Responds in under 200ms for 95% of requests
+- **Data Processing**: Under 5 seconds from device sending data to it appearing on dashboards
+- **Dashboard Updates**: Update speed depends on use (critical alerts: under 10s, operational dashboards: under 60s, historical reports: under 5 min)
+- **Search**: Results in under 1 second for typical searches
 
-> **Note**: Real-time monitoring requirements vary by use case. Critical safety monitoring may require sub-10-second updates, while operational dashboards can tolerate 30-60 second refresh cycles. Architecture selection should match actual operational needs rather than theoretical minimums.
+> **Note**: Update speeds vary by use. Critical safety monitoring needs updates in under 10 seconds, while operational dashboards can update every 30-60 seconds. Architecture should match actual needs, not theoretical ideals.
 
-#### NFR-2: Scalability
-- **Concurrent Users**: Support 20-40 concurrent users per tenant
-- **Total Users**: Support 1000+ total users across all tenants
-- **Data Throughput**: Handle 60 messages/second per device
-- **Storage Growth**: Support 15 GB/month growth per tenant
-- **Dashboard Count**: Support 60-120 dashboards per tenant
-- **Device Count**: Support 1000+ devices per tenant
-- **Tenant Scaling**: Scale from 30 to 100 tenants without architecture changes
+#### NFR-2: Growth Capacity
+- **Users Logged In**: 20-40 users logged in at once per company
+- **Total Users**: 1000+ users across all companies
+- **Data Processing**: 60 messages/second per device
+- **Storage**: 15 GB/month growth per company
+- **Dashboards**: 60-120 dashboards per company
+- **Devices**: 1000+ devices per company
+- **Companies**: Grow from 30 to 100 companies without changing architecture
 
-#### NFR-3: Availability and Reliability
-- **Uptime SLA**: 99.9% availability (excluding planned maintenance)
-- **Planned Maintenance**: <4 hours/month, scheduled during low-usage periods
-- **Mean Time To Recovery (MTTR)**: <1 hour for critical issues
-- **Data Durability**: 99.999999999% (11 nines) durability for stored data
-- **Backup Frequency**: Continuous replication with 15-minute RPO
-- **Multi-AZ Deployment**: All critical components across multiple availability zones
+#### NFR-3: Uptime and Reliability
+- **Uptime**: 99.9% (excluding planned maintenance)
+- **Maintenance**: Under 4 hours/month, during quiet periods
+- **Recovery Time**: Under 1 hour for critical issues
+- **Data Safety**: 99.999999999% (11 nines) - data won't be lost
+- **Backups**: Continuous backup with 15-minute recovery point
+- **Redundancy**: All critical parts run across multiple data centres
 
-### 5.2 Security Requirements
+### 5.2 Security
 
-#### NFR-4: Authentication and Authorisation
-- **User Authentication**:
-  - Email/password with complexity requirements (12+ chars, mixed case, numbers, symbols)
-  - Multi-factor authentication (MFA) required for administrator accounts
-  - MFA optional for standard users
-  - Session timeout after 30 minutes of inactivity
-  - Maximum 3 failed login attempts before account lockout
-- **Device Authentication**:
-  - X.509 certificate-based authentication for MQTT devices
-  - API key authentication for HTTP endpoints
-  - Certificate rotation every 90 days
-- **Authorisation**:
-  - Role-based access control (RBAC) for all resources
-  - Row-level security for data access (tenant isolation)
-  - Least privilege principle enforced
-  - Permission changes audit logged
+#### NFR-4: Who Can Access What
+- **User Login**:
+  - Email/password (12+ characters, mixed case, numbers, symbols)
+  - Two-factor authentication required for administrators
+  - Two-factor authentication optional for other users
+  - Logged out after 30 minutes of inactivity
+  - Account locked after 3 failed login attempts
+- **Device Login**:
+  - Certificate-based login for MQTT devices
+  - API key login for HTTP devices
+  - Certificates rotated every 90 days
+- **Permissions**:
+  - Role-based access (what you can do depends on your role)
+  - Data isolation (companies can only see their own data)
+  - Minimum permissions needed (users only get access they need)
+  - All permission changes logged
 
-#### NFR-5: Data Security
-- **Encryption in Transit**:
-  - TLS 1.2+ for all API communications
-  - MQTT over TLS for IoT device connections
+#### NFR-5: Data Protection
+- **Data in Transit** (while moving):
+  - TLS 1.2+ encryption for all API calls
+  - MQTT over TLS for device connections
   - HTTPS-only for web portal
   - Certificate pinning for mobile apps
-- **Encryption at Rest**:
+- **Data at Rest** (while stored):
   - AES-256 encryption for all stored data
   - Customer-managed encryption keys (optional)
-  - Encrypted database backups
-  - Encrypted log files
-- **Data Privacy**:
-  - Complete tenant data isolation
+  - Encrypted backups
+  - Encrypted logs
+- **Privacy**:
+  - Complete data isolation between companies
   - GDPR compliance for EU data
-  - Right to erasure implementation
-  - Data anonymisation for offboarded tenants
-  - Privacy policy and terms acceptance required
+  - Right to deletion
+  - Data anonymisation when companies leave
+  - Privacy policy and terms must be accepted
 
-#### NFR-6: Network Security
-- **Perimeter Security**:
-  - Web Application Firewall (WAF) protection
-  - DDoS mitigation (up to 10 Gbps)
-  - Rate limiting on all public endpoints
+#### NFR-6: Network Protection
+- **Edge Protection**:
+  - Web Application Firewall (WAF)
+  - DDoS attack mitigation (up to 10 Gbps)
+  - Rate limiting on all public access points
   - Geographic IP blocking (configurable)
-- **Internal Security**:
-  - Private subnets for application and data tiers
+- **Internal Protection**:
+  - Private networks for application and data
   - No public IP addresses on backend services
-  - VPC endpoints for cloud service access
-  - Network segmentation between components
+  - Private endpoints for cloud services
+  - Network separation between components
 
-#### NFR-7: Compliance and Auditing
-- **Audit Logging**:
-  - All user actions logged with timestamp, user ID, action, result
-  - All data access logged (who accessed what data when)
-  - All API calls logged with request/response metadata
-  - Log retention: 1 year minimum
-  - Tamper-proof audit logs
-- **Compliance Standards**:
-  - GDPR compliance for data privacy
-  - ISO 27001 information security alignment
-  - SOC 2 Type II readiness
-  - Data residency: EU region (London - eu-west-2)
-- **Security Assessments**:
-  - Annual penetration testing
-  - Quarterly vulnerability scanning
-  - Continuous dependency vulnerability monitoring
-  - Security incident response plan
+#### NFR-7: Compliance and Audit Logs
+- **Audit Logs**:
+  - All user actions logged (when, who, what, result)
+  - All data access logged (who looked at what and when)
+  - All API calls logged
+  - Logs kept for 7 years (GDPR, SOC 2 requirements)
+  - Tamper-proof logs (write-once storage)
+  - Logs can be searched and queried
+- **Compliance**:
+  - GDPR compliant for data privacy
+  - ISO 27001 information security aligned
+  - SOC 2 Type II ready
+  - Data stored in EU (London region)
+  - HIPAA ready with BAA (future healthcare use)
+- **Security Testing**:
+  - Penetration testing yearly
+  - Vulnerability scanning quarterly
+  - Continuous dependency monitoring
+  - Breach notification within 72 hours
+- **User Data Rights (GDPR)**:
+  - Right to Access: Export all data within 5-10 days
+  - Right to Deletion: Delete all personal data within 30 days
+  - Minimal personal data: No personal info in sensor data (device ID only)
+  - Automated where possible
 
-### 5.3 Usability Requirements
+### 5.3 Usability
 
 #### NFR-8: User Experience
-- **Learning Curve**: Non-technical users can complete onboarding in <30 minutes
-- **Accessibility**: WCAG 2.1 Level AA compliance for web portal
+- **Ease of Use**: Non-technical users can complete setup in under 30 minutes
+- **Accessibility**: WCAG 2.1 Level AA compliant
 - **Browser Support**:
   - Chrome (latest 2 versions)
   - Firefox (latest 2 versions)
   - Safari (latest 2 versions)
   - Edge (latest 2 versions)
-- **Mobile Support**: Native experience on iOS 14+ and Android 10+
-- **Language Support**: English (initial release), expandable to other languages
-- **Help Documentation**:
-  - Contextual help tooltips throughout interface
-  - Searchable knowledge base
+- **Mobile**: Works on iOS 14+ and Android 10+
+- **Language**: English (initial release), expandable later
+- **Help**:
+  - Tooltips throughout
+  - Searchable help articles
   - Video tutorials for common tasks
-  - API documentation for integrations
+  - API documentation
 
-#### NFR-9: Operational Excellence
+#### NFR-9: Operations
 - **Monitoring**:
   - Real-time system health dashboards
-  - Proactive alerting for system issues
-  - Performance metrics tracking
+  - Alerts for system issues
+  - Performance tracking:
+    - Ingest Lag: ≤10 seconds (P95) - time from device send to storage write
+    - Write Errors: ≤0.1% (P99) - failed writes / total writes
+    - Alert Time-to-Notify: ≤10 seconds (P95) - event to SNS notification
+    - Dashboard Freshness: ≤60 seconds (P95) - last data refresh timestamp
+    - Query Latency: ≤5 seconds (P95) - dashboard load time
+    - Availability: ≥99.9% - successful API calls / total
+  - Error budget tracking: 99.9% = 43 minutes downtime/month budget
   - Cost monitoring and optimisation
+- **Disaster Recovery**:
+  - RPO (Recovery Point Objective): ≤5 minutes
+  - RTO (Recovery Time Objective): ≤30 minutes for full service restoration
+  - Automated database backups with continuous replication
+  - Automated disaster recovery testing (quarterly)
+  - Multi-AZ deployment for all critical components
+  - Cross-region backup for business continuity
+- **Replay & Backfill**:
+  - Idempotent event processing with structured event IDs: {device_id}_{timestamp_ms}_{sequence_number}
+  - Data retention: 7 days in hot storage (configurable to 365 days)
+  - Deduplication window: 5 minutes for replay protection
+  - Backfill capability: Up to 7 days from hot storage, unlimited from archival storage
+- **Schema Evolution**:
+  - Backward-compatible schema changes
+  - 30-day dual-schema support for device migration
+  - Staged rollout for breaking changes
+- **Tenant Off-Boarding**:
+  - 30-day notice period before data deletion
+  - Full data export (CSV/Parquet) provided to tenant
+  - IoT certificate revocation immediate upon termination
+  - 90-day soft delete period before physical purge
+  - Audit logs retained for 7 years post-termination
 - **Maintenance**:
   - Zero-downtime deployments for application updates
-  - Automated database backups
-  - Automated disaster recovery testing (quarterly)
   - Runbooks for common operational tasks
+  - Automated failover for critical components
 - **Support**:
   - In-app support ticket submission
   - Email support with 24-hour response time
   - Critical issue response within 1 hour
   - Monthly service status reports
 
-### 5.4 Integration Requirements
+### 5.4 Integrations
 
-#### NFR-10: API and Integration Capabilities
+#### NFR-10: APIs and Connections to Other Systems
 - **REST API**:
   - RESTful API for all platform functionality
   - OpenAPI 3.0 specification published
@@ -576,6 +620,89 @@ The system SHALL provide intelligent alerting capabilities:
   - Manufacturing Execution Systems (MES) integration (future)
   - BI tool integration (Tableau, Power BI)
   - SSO providers (Azure AD, Okta, Google Workspace)
+
+### 5.5 Portal Authentication & Authorization (v0.2 Addition)
+
+> **Note**: This section documents authentication and authorization requirements based on architectural review feedback. The customer access portal implementation is out of scope for the initial infrastructure design.
+
+#### NFR-11: Authentication (AuthN)
+- **Identity Provider**:
+  - Amazon Cognito User Pools as managed authentication service
+  - OIDC integration for SSO with customer IdPs (Azure AD, Okta, Google Workspace)
+  - Support for social login (optional): Google, Microsoft
+- **Authentication Methods**:
+  - Email/password with complexity requirements (12+ characters)
+  - Multi-Factor Authentication (MFA):
+    - Mandatory for Org Admin and Site Admin roles
+    - Optional for Operator and Read-Only roles
+    - Supported methods: SMS, TOTP authenticator (e.g., Google Authenticator, Authy)
+- **Session Management**:
+  - Session token expiry: 8 hours
+  - Refresh tokens: 30-day validity with automatic renewal
+  - Session timeout: 30 minutes of inactivity
+  - Concurrent session limit: 3 active sessions per user
+- **Password Policy**:
+  - Minimum 12 characters
+  - Complexity: Mixed case, numbers, symbols required
+  - Password expiration: Optional (not enforced by default)
+  - Password history: Cannot reuse last 5 passwords
+  - Account lockout: 3 failed attempts, 15-minute lockout
+
+#### NFR-12: Organization & Tenant Model
+- **Hierarchical Structure**:
+  - **Organization**: Top-level tenant entity (e.g., "Acme Manufacturing Ltd")
+  - **Sites**: Physical manufacturing locations within organization (e.g., "Factory A", "Warehouse B")
+  - **Devices**: Equipment and sensors at each site (machines, meters, sensors)
+  - **Users**: Assigned to organization with site-level access control
+- **Multi-Tenancy Isolation**:
+  - Database-enforced Row-Level Security (RLS) or partition-based isolation
+  - All queries automatically filtered by tenant_id/organization_id
+  - No application-layer filtering required (security enforced at data layer)
+  - Tenant isolation validated through penetration testing
+
+#### NFR-13: Role-Based Access Control (RBAC)
+Four-tier role model with hierarchical permissions:
+
+| Role | Scope | Permissions | Use Case |
+|------|-------|-------------|----------|
+| **Org Admin** | All sites in organization | Full access: manage users, sites, devices, billing, view all data | Company IT manager |
+| **Site Admin** | Assigned sites only | Manage devices and users for their sites, configure dashboards, set alerts | Factory manager |
+| **Operator** | Assigned sites only | View dashboards, acknowledge alerts, generate reports (no configuration) | Production supervisor |
+| **Read-Only** | Assigned sites only | View dashboards and reports only (no alert ACK or config) | External auditor, contractor |
+
+**Permission Matrix**:
+- User management: Org Admin, Site Admin (for their sites)
+- Device onboarding: Org Admin, Site Admin
+- Dashboard configuration: Org Admin, Site Admin
+- Alert configuration: Org Admin, Site Admin
+- View data: All roles
+- Acknowledge alerts: Operator, Site Admin, Org Admin
+- Billing & subscription: Org Admin only
+
+#### NFR-14: IP Allow-Listing (Optional)
+Enterprise customers may require IP-based access control:
+- **Configuration**: Per-organization IP CIDR ranges (e.g., "10.0.0.0/8", "203.0.113.0/24")
+- **Enforcement**:
+  - API Gateway resource policy for API calls
+  - Cognito pre-authentication trigger for login requests
+- **Bypass**: MFA can override IP restrictions for emergency access (configurable)
+- **Audit**: All IP-based access denials logged to security audit trail
+
+#### NFR-15: Dashboard Embedding Strategy
+Requirements for embedding dashboards in customer portal:
+
+| Dashboard Solution | Embedding Method | Cost Model | Authentication Flow |
+|--------------------|------------------|------------|---------------------|
+| **QuickSight** (Options A/B) | QuickSight embedding SDK | $0.30 per 30-minute session | Cognito JWT → QuickSight session token |
+| **Custom React** (Option C) | Direct REST API calls | Included in development cost | Cognito JWT → REST API bearer token |
+| **Grafana** (Option D) | Iframe embedding | Free (included in Pro tier) | Cognito JWT → Grafana API token |
+
+**Embedding Requirements**:
+- Single Sign-On (SSO): Users should not re-authenticate for embedded dashboards
+- White-labeling: Customer logo, colors, domain (e.g., "customer1.smdh.io")
+- Tenant isolation: Embedded dashboards automatically filtered to user's organization
+- Responsive design: Support desktop, tablet, mobile viewports
+- Security: Content Security Policy (CSP), iframe sandboxing, CORS configuration
 
 ---
 
@@ -775,39 +902,39 @@ The system SHALL provide intelligent alerting capabilities:
 
 ---
 
-## 9. Success Criteria
+## 9. How We'll Know It's Working
 
-### 9.1 User Success Metrics
+### 9.1 User Metrics
 
-| Metric | Target | Measurement Method |
+| What We're Measuring | Target | How We Measure |
 |--------|--------|-------------------|
-| Onboarding completion rate | >90% | Track registration to first dashboard |
-| Time to first insight | <1 hour | Registration to viewing first dashboard |
-| User satisfaction score | >4.0/5.0 | Quarterly NPS surveys |
-| Dashboard usage frequency | >3x/week per user | Analytics tracking |
-| Feature adoption rate | >60% | Track feature usage across users |
-| Support ticket reduction | <1 ticket/tenant/month | Support system metrics |
+| Registration completion | Over 90% | Track from sign-up to first dashboard |
+| Time to first dashboard | Under 1 hour | From registration to viewing data |
+| User satisfaction | Over 4.0/5.0 | Quarterly surveys |
+| How often dashboards are used | Over 3 times/week per user | Usage tracking |
+| Feature use | Over 60% | Track which features get used |
+| Support tickets | Under 1 per company per month | Support system |
 
-### 9.2 Technical Success Metrics
+### 9.2 Technical Metrics
 
-| Metric | Target | Measurement Method |
+| What We're Measuring | Target | How We Measure |
 |--------|--------|-------------------|
-| System uptime | >99.9% | CloudWatch monitoring |
-| Data ingestion success rate | >99.95% | Pipeline metrics |
-| Dashboard load time | <2 seconds (p95) | Real User Monitoring (RUM) |
-| API error rate | <0.1% | CloudWatch metrics |
-| Data quality score | >95% | Automated quality checks |
-| Alert accuracy | >90% | False positive tracking |
+| System uptime | Over 99.9% | CloudWatch monitoring |
+| Data ingestion success | Over 99.95% | Pipeline metrics |
+| Dashboard load time | Under 2 seconds (95% of loads) | Real user monitoring |
+| API errors | Under 0.1% | CloudWatch metrics |
+| Data quality | Over 95% | Automated checks |
+| Alert accuracy | Over 90% | False alarm tracking |
 
-### 9.3 Business Success Metrics
+### 9.3 Business Metrics
 
-| Metric | Target | Measurement Method |
+| What We're Measuring | Target | How We Measure |
 |--------|--------|-------------------|
-| Customer acquisition | 30 companies (Year 1) | CRM tracking |
-| Customer retention | >90% annual | Churn analysis |
-| Cost per tenant efficiency | Infrastructure costs scale linearly with usage | Cost monitoring system |
-| Tenant growth rate | 30% YoY | Business analytics |
-| Net Promoter Score | >50 | Quarterly surveys |
+| New companies | 30 companies (Year 1) | CRM tracking |
+| Companies staying | Over 90% yearly | Churn tracking |
+| Cost efficiency | Infrastructure costs grow with usage, not faster | Cost monitoring |
+| Growth rate | 30% year-on-year | Business analytics |
+| Net Promoter Score | Over 50 | Quarterly surveys |
 
 ---
 
@@ -1028,6 +1155,92 @@ The following features are explicitly out of scope for the initial release but m
 
 ---
 
+## Appendix E: Version 0.2 Change Summary
+
+### Overview
+Version 0.2 incorporates feedback from comprehensive architectural review to ensure requirements align with infrastructure design options and operational realities.
+
+### Key Changes in v0.2 (November 2, 2025)
+
+#### 1. Split Latency Requirements (Section 3.1)
+**Rationale**: Single "<1 second dashboard update" requirement was over-specified and driving architecture complexity/cost.
+
+| Requirement Type | Previous | Updated (v0.2) | Impact |
+|------------------|----------|----------------|--------|
+| Safety/Critical Alerts | <10 seconds (implied) | ≤5-10 seconds (explicit) | ✅ Clarified criticality |
+| Operational Alerts | <10 seconds | ≤60 seconds acceptable | ✅ Realistic operational need |
+| Operator Dashboards | <1 second | ≤60 seconds acceptable | ✅ Allows simpler architecture (Option B) |
+
+**Architecture Impact**: Allows Option B (Snowflake) with Lambda fast-path, saving $179K-$199K annually vs Option A (Flink).
+
+#### 2. Enhanced Security Requirements (Section 5.2, NFR-7)
+**Added**:
+- 7-year audit log retention (GDPR/SOC 2 compliance)
+- S3 Object Lock WORM mode for tamper-proof logs
+- 72-hour breach notification SLA
+- Data Subject Rights (GDPR) processing procedures
+- Automated DSR handling via API
+
+**Rationale**: Architectural review identified need for explicit security control documentation.
+
+#### 3. Enhanced Operational Requirements (Section 5.3, NFR-9)
+**Added**:
+- **Golden Signals**: Specific SLOs for ingest lag, write errors, alert latency, dashboard freshness, query latency, availability
+- **Error Budget Tracking**: 99.9% = 43 minutes downtime/month budget
+- **RPO/RTO Targets**: RPO ≤5 min, RTO ≤30 min (explicit recovery objectives)
+- **Replay & Backfill**: Idempotent event processing with structured event IDs
+- **Schema Evolution**: Backward compatibility and migration strategies
+- **Tenant Off-Boarding**: Secure data lifecycle procedures
+
+**Rationale**: Operations and disaster recovery procedures must be defined upfront, not retrofitted.
+
+#### 4. New Portal Authentication & Authorization Section (Section 5.5, NFR-11-15)
+**Added Entire Section**:
+- **NFR-11**: Authentication (Cognito, OIDC, MFA requirements)
+- **NFR-12**: Organization & tenant model (hierarchical structure)
+- **NFR-13**: RBAC with 4-tier role model (Org Admin, Site Admin, Operator, Read-Only)
+- **NFR-14**: IP allow-listing for enterprise customers
+- **NFR-15**: Dashboard embedding strategy per architecture option
+
+**Rationale**: Architectural review identified missing portal authentication assumptions that impact infrastructure design.
+
+#### 5. Clarified Data Volume Specifications (Section 3.1)
+**Updated**:
+- "2.6M-3.9M rows/day" → "2.6M-3.9M rows/day **per tenant**"
+- Added platform-wide scaling context (30-100 tenants)
+
+**Rationale**: Ambiguity in data volume scope was causing capacity planning disputes.
+
+#### 6. Multi-Tenancy Isolation Requirements (Section 5.5, NFR-12)
+**Added Explicit Requirement**:
+- Database-enforced RLS or partition-based isolation (not application-layer filtering)
+- Tenant isolation validated through penetration testing
+
+**Rationale**: Differentiates secure native isolation (Options A/B/D) from risky app-enforced filtering (Option C).
+
+### Requirements Validation Status
+
+| Requirement Area | Validation Status | Owner | Target Date |
+|------------------|-------------------|-------|-------------|
+| ✅ Latency SLAs (split alerts/dashboards) | Documented in v0.2 | Architecture Team | Complete |
+| ✅ Security controls (audit, GDPR, DSR) | Documented in v0.2 | Security Team | Complete |
+| ✅ Operations (RPO/RTO, off-boarding) | Documented in v0.2 | Operations Team | Complete |
+| ✅ Portal AuthN/AuthZ assumptions | Documented in v0.2 | Product Team | Complete |
+| ⏳ Operator validation of alert latency | Field interviews needed | Product Owner | Nov 15, 2025 |
+| ⏳ Cost model validation | Customer willingness-to-pay research | Business Dev | Nov 30, 2025 |
+| ⏳ Timeline validation | MVP scope definition | Product Owner | Nov 15, 2025 |
+
+### Cross-Reference to Architecture Document
+This requirements document v0.2 aligns with **SMDH Infrastructure Design Options v0.2** (November 2, 2025), which provides detailed architecture evaluation based on these updated requirements.
+
+**Key Alignment Points**:
+- Split latency requirements enable Option B (Snowflake) + Lambda fast-path
+- Security controls documented match architecture Security Control Matrix (Section 9)
+- Ops requirements align with Operations & DR section (Section 8)
+- Portal assumptions match Portal Assumptions section (Section 10)
+
+---
+
 ## Document Approval
 
 | Role | Name | Signature | Date |
@@ -1039,11 +1252,11 @@ The following features are explicitly out of scope for the initial release but m
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: October 2025
-**Next Review**: January 2026
-**Status**: Approved for Development
+**Document Version**: 0.2 (Architectural Review Update)
+**Last Updated**: November 2, 2025
+**Next Review**: December 2025 (post-architecture selection)
+**Status**: Under Review - Pending Architecture Decision
 
 ---
 
-*This document represents the complete system requirements for the Smart Manufacturing Data Hub platform and serves as the authoritative source for all development, testing, and deployment activities.*
+*This document represents the complete system requirements for the Smart Manufacturing Data Hub platform and serves as the authoritative source for all development, testing, and deployment activities. Version 0.2 incorporates architectural review feedback to ensure requirements are evidence-based, operationally realistic, and aligned with infrastructure design options.*

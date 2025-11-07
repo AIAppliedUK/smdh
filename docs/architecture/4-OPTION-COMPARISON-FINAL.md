@@ -10,6 +10,16 @@
 
 This document provides a comprehensive comparison of **all four** architecture options for the Smart Manufacturing Data Hub (SMDH), including **corrected cost calculations** for Option C (SiteWise).
 
+### Cost Methodology
+
+**All costs are based on actual consumption patterns:**
+- **Data Volume**: 2.6M-3.9M rows/day (117M values/month)
+- **Tenants**: 30 companies
+- **Devices**: ~50-100 devices per tenant
+- **Query Patterns**: Real-time dashboards + historical analytics
+
+Costs will scale linearly with changes to these consumption parameters. No arbitrary budget targets are imposed.
+
 ### Critical Correction Made
 
 **Option C (AWS IoT SiteWise)** was initially calculated as costing **$21,150/month** due to data volume misinterpretation. **Corrected cost: $6,334/month** (70% reduction). Option C is now **economically viable** and ranked 3rd.
@@ -21,8 +31,7 @@ This document provides a comprehensive comparison of **all four** architecture o
 | Criterion | Option A (Flink) | Option B (Snowflake) | Option C (SiteWise) ✅ | Option D (Timestream) |
 |-----------|-----------------|---------------------|----------------------|---------------------|
 | **Monthly Cost** | $2,500-4,200 | $2,170-3,450 | **$6,334** ✅ | $3,965 |
-| **Cost/Tenant** | $83-140 | $72-115 | **$211** ✅ | $132 |
-| **Within Budget?** | ✅ Yes | ✅ Yes | ✅ **Yes** | ✅ Yes |
+| **Est. Monthly/Tenant** | $83-140 | $72-115 | **$211** ✅ | $132 |
 | **Services Count** | 15+ | 5 | 8-10 | 7-8 |
 | **Complexity** | ⭐⭐ Very High | ⭐⭐⭐⭐⭐ Low | ⭐⭐⭐ Medium-High | ⭐⭐⭐⭐ Medium |
 | **Real-time Latency** | <1 second | 5-10 seconds | <1 second | <5 seconds |
@@ -51,10 +60,12 @@ This document provides a comprehensive comparison of **all four** architecture o
 
 ### Cost Ranking (Cheapest to Most Expensive)
 
-1. 🥇 **Option B**: $2,170-3,450/month ($72-115/tenant)
-2. 🥈 **Option A**: $2,500-4,200/month ($83-140/tenant)
-3. 🥉 **Option D**: $3,965/month ($132/tenant)
-4. **Option C**: **$6,334/month** ($211/tenant) ✅ **CORRECTED**
+Based on 30 tenants, 2.6M-3.9M rows/day consumption:
+
+1. 🥇 **Option B**: $2,170-3,450/month (est. $72-115/tenant)
+2. 🥈 **Option A**: $2,500-4,200/month (est. $83-140/tenant)
+3. 🥉 **Option D**: $3,965/month (est. $132/tenant)
+4. **Option C**: **$6,334/month** (est. $211/tenant) ✅ **CORRECTED**
 
 ### Simplicity Ranking (Simplest to Most Complex)
 
@@ -80,7 +91,6 @@ This document provides a comprehensive comparison of **all four** architecture o
 | **NFR-2**: Scalability (30-100 tenants) | ✅ | ✅ | ✅ | ✅ | All scale linearly |
 | **NFR-3**: 99.9% uptime | ✅ | ✅ | ✅ | ✅ | All meet |
 | **NFR-7**: GDPR/SOC 2 | ✅ | ✅ Easier | ⚠️ Complex | ✅ | B unified, C distributed |
-| **Budget**: $200-300/tenant | ✅ | ✅ | ✅ | ✅ | **All within budget** ✅ |
 
 **Compliance Score**:
 - **Option A**: 100% (meets all)
@@ -121,7 +131,7 @@ This document provides a comprehensive comparison of **all four** architecture o
 2. **Higher CloudWatch costs**: $300/month (1,500 SiteWise alarms)
 3. **Slightly higher IoT Core**: $237 vs $150 (more granular device management)
 
-**Despite higher cost, Option C is VIABLE** ($211/tenant within $200-300 budget)
+**Note**: All costs based on actual consumption: 30 tenants, 2.6M-3.9M rows/day, 117M values/month
 
 ---
 
@@ -247,7 +257,7 @@ This document provides a comprehensive comparison of **all four** architecture o
 - ✅ Team has **deep SiteWise expertise** (rare)
 - ✅ Single-tenant or **<10 tenants** (multi-tenancy less critical)
 - ✅ Prefer AWS-managed asset modeling
-- ✅ Budget supports $200-250/tenant
+- ✅ Consumption patterns support higher infrastructure costs
 - ⚠️ Can accept manual multi-tenant isolation risk
 - ⚠️ Willing to build custom React dashboards
 
@@ -255,7 +265,7 @@ This document provides a comprehensive comparison of **all four** architecture o
 - ✅ Sub-second latency is **legally/regulatorily required**
 - ✅ Custom deep learning models confirmed need
 - ✅ Team has or can hire Flink expertise
-- ✅ Budget supports highest TCO
+- ✅ Can support highest infrastructure and operational costs
 - ✅ 24-week timeline acceptable
 - ⚠️ Prepared for high operational complexity
 
@@ -289,13 +299,13 @@ DEFAULT: Choose Option B (Snowflake) - Best for 80% of scenarios
 
 ## Key Findings Summary
 
-### 1. All Options Are Viable ✅
+### 1. All Options Are Viable Based on Consumption ✅
 
-**Budget Compliance**: All 4 options meet $200-300/tenant target
-- Option B: $72-115/tenant ✅ (cheapest)
-- Option A: $83-140/tenant ✅
-- Option D: $132/tenant ✅
-- Option C: $211/tenant ✅ (was incorrectly stated as $705)
+**Cost Analysis**: All 4 options based on 30 tenants, 2.6M-3.9M rows/day
+- Option B: $72-115/tenant (cheapest)
+- Option A: $83-140/tenant
+- Option D: $132/tenant
+- Option C: $211/tenant (was incorrectly stated as $705)
 
 ### 2. Option C Was Incorrectly Dismissed
 
