@@ -4,19 +4,20 @@
 
 ### 1.1 What We're Building
 
-The SMDH platform is a multi-tenant IoT analytics system that collects data from manufacturing facilities and provides real-time insights. The architecture must accommodate diverse data sources - from high-frequency sensors transmitting via MQTT to legacy systems uploading CSV files - while maintaining strict tenant isolation for up to 30 manufacturing SMEs.
+The SMDH platform is a multi-tenant IoT analytics system that collects data from manufacturing facilities via native MQTT protocol and provides real-time insights. The architecture optimises for persistent, high-frequency sensor connections while maintaining strict tenant isolation for up to 30 manufacturing SMEs.
 
 ### 1.2 Core Architecture Principle
 
-**The data source determines the ingestion path.**
+**MQTT is the universal IoT protocol.**
 
-We don't force all data through a single pipeline. Instead, we provide three optimised paths based on how the data naturally arrives:
+The SMDH platform uses AWS IoT Core as a managed MQTT broker. All sensor data sources connect via MQTT - either directly (DevTank OSM with Wi-Fi) or through LoRaWAN gateways (Milesight UG65). This single, protocol-native approach provides:
 
-- **MQTT devices** → AWS IoT Core → Kinesis → Snowflake
-- **HTTP/REST systems** → API Gateway → Lambda → Snowflake
-- **File uploads** → Streamlit portal → Snowflake stages
+- Persistent connections for high-frequency sensors (1 Hz updates)
+- Native QoS guarantees (at-least-once delivery)
+- Built-in device registry and authentication
+- Integrated buffering and ordering via Kinesis
 
-This protocol-driven approach ensures we use the right tool for each site, avoiding unnecessary complexity while maintaining reliability.
+No custom validation layers, no HTTP polling overhead, no protocol conversions—just pure MQTT from edge to cloud.
 
 ### 1.3 Key Business Drivers
 
@@ -24,8 +25,9 @@ This protocol-driven approach ensures we use the right tool for each site, avoid
 | ----------------------------- | ------------------------------------------ |
 | **Up to 30 separate tenants** | Database-per-tenant isolation in Snowflake |
 | **5-10 sensors per site**     | Modest but steady streaming data volume    |
-| **Mixed device types**        | Multiple ingestion protocols required      |
+| **MQTT-native sensors**       | AWS IoT Core as central MQTT broker        |
 | **Real-time monitoring**      | Sub-minute data latency requirements       |
+| **Distributed gateways**      | Multi-AZ deployment, regional endpoints    |
 
 ---
 
@@ -35,11 +37,11 @@ This protocol-driven approach ensures we use the right tool for each site, avoid
 
 | Requirement                          | Description                                             | Architecture Solution                                            |
 | ------------------------------------ | ------------------------------------------------------- | ---------------------------------------------------------------- |
-| **FR-001: Multi-protocol ingestion** | Support MQTT, HTTP, and file-based data sources         | Three distinct ingestion paths optimised for each protocol       |
+| **FR-001: MQTT ingestion**           | Support MQTT-based sensors via gateways and Wi-Fi       | IoT Core as managed MQTT broker with multi-AZ high availability |
 | **FR-002: Real-time processing**     | <1 minute from sensor to dashboard for critical metrics | Streaming architecture with Kinesis and Dynamic Tables           |
 | **FR-003: Historical analysis**      | Store 2+ years of data for trend analysis               | Snowflake with Time Travel and configurable retention            |
-| **FR-004: Multi-tenancy**            | Complete data isolation between customers               | Database-per-tenant in Snowflake, tenant validation at ingestion |
-| **FR-005: Self-service uploads**     | Users can upload data files                             | Streamlit portal with drag-and-drop interface                    |
+| **FR-004: Multi-tenancy**            | Complete data isolation between customers               | Database-per-tenant in Snowflake, X.509 certs per tenant         |
+| **FR-005: Persistent connections**   | Handle continuous sensor streams with QoS guarantees    | IoT Core QoS 1/2, Kinesis buffering, ordering per tenant         |
 
 ### 2.2 Non-Functional Requirements
 
@@ -53,12 +55,12 @@ This protocol-driven approach ensures we use the right tool for each site, avoid
 
 ### 2.3 Constraints
 
-| Constraint                                            | Impact on Architecture                            |
-| ----------------------------------------------------- | ------------------------------------------------- |
-| **MQTT devices cannot connect directly to Snowflake** | Must use AWS IoT Core as MQTT broker              |
-| **Snowflake has no native MQTT support**              | Requires intermediate streaming service (Kinesis) |
-| **Some systems only support HTTP webhooks**           | Need API Gateway for HTTP ingestion               |
-| **Some data arrives as manual file uploads**          | Portal required for user uploads                  |
+| Constraint                                            | Impact on Architecture                                     |
+| ----------------------------------------------------- | ---------------------------------------------------------- |
+| **MQTT devices cannot connect directly to Snowflake** | Must use AWS IoT Core as managed MQTT broker               |
+| **Snowflake has no native MQTT support**              | Requires intermediate streaming service (Kinesis)          |
+| **X.509 certificates expire**                         | Automated rotation via AWS Certificate Manager or Secrets  |
+| **IoT devices require network connectivity**          | Multi-AZ regional deployment, connection state monitoring  |
 
 ---
 
@@ -68,39 +70,33 @@ This protocol-driven approach ensures we use the right tool for each site, avoid
 
 #### 3.1.1 AWS IoT Core (MQTT Broker)
 
-Acts as the MQTT broker for all IoT devices. Maintains persistent connections with thousands of sensors, handles connection management, and routes messages to downstream services.
+Acts as the MQTT broker for all IoT devices. Maintains persistent connections with thousands of sensors, handles connection management, and routes messages to downstream services via the IoT Rules Engine.
 
-- MQTT devices (like LoRaWAN gateways) only transmit over MQTT protocol, not HTTP
-- Provides device registry for managing certificates and metadata
-- Handles connection state, reconnection and offline message queuing
-- Offers QoS guarantees for reliable message delivery
+**Capabilities:**
 
-**Traceability**
+- MQTT v3.1.1 and v5.0 protocol support
+- Device registry for managing X.509 certificates and metadata
+- Connection state management, reconnection, and offline message queuing
+- QoS 0, 1, and 2 guarantees for reliable message delivery
+- Topic-based access control (ACLs) per tenant
+- Built-in monitoring via CloudWatch metrics
 
-- FR-001: Enables MQTT protocol support
-- NFR-001: Auto-scales to handle millions of messages
-- NFR-003: Certificate-based authentication for devices
+**Why it's needed:**
 
-Always required when devices communicate via MQTT protocol. This includes most IoT sensors and gateways.
-
-#### 3.1.2 API Gateway
-
-Provides a managed REST API endpoint for HTTP-based data sources. Handles authentication, rate limiting, and request routing to Lambda functions.
-
-- Legacy systems often only support HTTP/webhook integration
-- Provides centralised API management and monitoring
-- Enforces rate limits to protect backend systems
-- Generates SDK and documentation automatically
+- All sensor data arrives via MQTT (Milesight UG65 gateways, DevTank OSM devices)
+- Provides central authentication point for distributed edge devices
+- Manages certificate lifecycle without application involvement
+- Offers persistent connections suited for high-frequency sensors (1 Hz+)
+- Native integration with Kinesis via IoT Rules Engine
 
 **Traceability**
 
-- FR-001: Enables HTTP/REST protocol support
-- NFR-002: Managed service with 99.95% SLA
-- NFR-003: API key management and request validation
+- FR-001: Enables MQTT protocol support for all sensor types
+- FR-005: Maintains persistent connections with QoS guarantees
+- NFR-001: Auto-scales to handle 26M+ messages/day
+- NFR-003: Certificate-based authentication (X.509)
 
-Required for any data source that pushes data via HTTP POST, including configured gateways, third-party webhooks, and legacy system integrations.
-
-#### 3.1.3 Kinesis Data Streams
+#### 3.1.2 Kinesis Data Streams
 
 Buffers and orders streaming data between IoT Core and Snowflake. Provides temporary storage for high-velocity data streams with guaranteed ordering per partition.
 
@@ -117,75 +113,66 @@ Buffers and orders streaming data between IoT Core and Snowflake. Provides tempo
 
 Required when using IoT Core for MQTT ingestion. Optional for HTTP if buffering is needed.
 
-### 3.2 Processing Layer
+### 3.2 IoT Rules Engine
 
-#### 3.2.1 Lambda Functions
+Routes and filters MQTT messages from IoT Core to Kinesis. Implements multi-tenant routing and error handling without custom code.
 
-Serverless compute that handles data validation, transformation, and routing. Different functions serve different purposes:
+**Capabilities:**
 
-- **Ingestion Lambda**: Validates tenant ID, generates JWT tokens, calls Snowflake APIs
-- **Transformation Lambda**: Converts between data formats, enriches data
-
-- Validates data before it enters Snowflake (fail-fast principle)
-- Enforces multi-tenant boundaries (prevents data leakage)
-- Handles authentication complexity (JWT generation for Snowflake)
-- Transforms data into consistent schema
-
-**Traceability**
-
-- FR-004: Tenant validation prevents cross-tenant data access
-- NFR-001: Auto-scales with load
-- NFR-005: Serverless means no servers to maintain
-
-Required for API Gateway integration. Optional for IoT Core if transformation is needed or the site can't support MQTT transmission.
-
-### 3.3 Storage & Analytics Layer
-
-#### 3.3.1 Snowflake Data Platform
-
-Central data warehouse handling all storage, processing, and analytics. Provides:
-
-- Raw data storage in VARIANT columns (flexible schema)
-- Stream processing via Streams and Tasks
-- Real-time aggregations via Dynamic Tables
-- ML capabilities via Cortex functions
-- Native web apps via Streamlit
+- SQL-based topic pattern matching (e.g., `smdh/{tenant_id}/+/sensor-data`)
+- Message transformation and enrichment
+- Conditional routing (filter before forwarding)
+- Error handling with configurable dead-letter topics
+- CloudWatch metrics for monitoring
 
 **Why it's needed:**
 
-- Single source of truth for all manufacturing data
-- Handles both structured and semi-structured data
-- Provides powerful analytics without moving data
-- Scales compute independently of storage
-- Native multi-tenancy support
+- Extracts tenant context from MQTT topic path
+- Routes messages to correct Kinesis partition per tenant
+- Republishes failures to error topics for investigation
+- Reduces dependency on custom processing code
 
 **Traceability**
 
-- FR-003: Long-term storage with Time Travel
-- FR-004: Database-per-tenant isolation
-- NFR-004: Query optimisation and result caching
+- FR-001: Routes MQTT messages based on tenant
+- FR-004: Enforces tenant isolation via topic ACLs
+- FR-005: Guarantees ordered delivery per partition
 
-#### 3.3.2 Streamlit in Snowflake
+### 3.3 Snowflake Integration
 
-Native web application framework running inside Snowflake. Provides:
+**Overview:**
 
-- Customer portal for dashboards
-- File upload interface for batch data
-- Configuration management UI
-- Custom reporting tools
+Kinesis streams integrate with Snowflake via the Snowflake Openflow Kinesis Connector (native integration). This is an external system to AWS but critical for the complete data pipeline.
 
-**Why it's needed:**
+**Integration Requirements:**
 
-- Eliminates need for separate web hosting
-- Direct access to Snowflake data (no APIs needed)
-- Inherits Snowflake security and authentication
-- Rapid development with Python
+- Snowflake account must exist in eu-west-2 (same region as Kinesis)
+- Cross-account IAM role configured in AWS to allow Snowflake to read from Kinesis
+- Openflow connector configured per tenant to route Kinesis streams to Snowflake databases
+- Each tenant gets isolated database: `smdh_tenant_{tenant_id}`
+
+**Key AWS Configuration for Snowflake Integration:**
+
+1. **IAM Role** for Snowflake Openflow connector
+   - Allows Snowflake to assume role and read Kinesis streams
+   - Restricts access to specific Kinesis streams only
+   - External ID required for security
+
+2. **Secrets Manager Secret**
+   - Stores Snowflake private key for JWT authentication
+   - Used by Snowflake to sign requests to Kinesis
+   - Automatic rotation before expiry
+
+3. **Kinesis Stream Naming**
+   - Stream: `smdh-sensor-data-stream`
+   - Partitioned by `{tenant_id}` to route messages to correct tenant database
+   - On-demand capacity scales automatically with message volume
 
 **Traceability**
 
-- FR-005: Self-service file upload capability
-- NFR-003: Inherits Snowflake's security model
-- NFR-005: No separate infrastructure to manage
+- FR-002: Real-time data flow from Kinesis to Snowflake
+- FR-004: Tenant isolation enforced via partition keys
+- NFR-002: High availability via multi-AZ Kinesis replication
 
 ### 3.4 Supporting Services
 
@@ -203,21 +190,7 @@ Securely stores and rotates sensitive credentials like Snowflake private keys, A
 - NFR-003: Secure credential management
 - NFR-005: Automated rotation reduces operational burden
 
-#### 3.4.2 DynamoDB
-
-Stores API key to tenant ID mappings for fast lookup during ingestion.
-
-- Sub-millisecond lookups for API key validation
-- Scales automatically with request volume
-- Provides consistent performance
-- Serverless with no maintenance
-
-**Traceability**
-
-- FR-004: Enables tenant identification
-- NFR-004: Fast lookups for API performance
-
-#### 3.4.3 CloudWatch
+#### 3.4.2 CloudWatch
 
 Centralised monitoring and logging for all AWS services. Collects metrics, stores logs, and triggers alarms.
 
@@ -240,59 +213,65 @@ Centralised monitoring and logging for all AWS services. Collects metrics, store
 
 ### 4.1 MQTT Sensor Data Flow
 
-**Scenario:** Temperature sensor sending readings every second via LoRaWAN gateway
+**Scenario:** Manufacturing facility with multiple sensor types sending continuous data
 
-**Flow:**
+**Devices in scope:**
 
-1. **Sensor → Gateway**: LoRaWAN protocol over 868 MHz radio
-2. **Gateway → IoT Core**: MQTT publish with X.509 authentication
-3. **IoT Core → Kinesis**: Rule engine routes based on topic pattern
-4. **Kinesis → Snowflake**: Openflow connector or Snowpipe ingests batches
-5. **Snowflake Processing**: Streams detect changes, Tasks transform data
-6. **Analytics**: Dynamic Tables aggregate, Streamlit displays dashboards
+- Milesight UG65 LoRaWAN gateways (collect sensor data via 868 MHz radio)
+- DevTank OpenSmartMonitor (air quality, energy, environment via Wi-Fi MQTT or LoRaWAN)
+- Generic LoRaWAN sensors (temperature, vibration, state monitoring)
 
-**Why this path:**
+**End-to-end data flow:**
 
-- Sensor only speaks LoRaWAN/MQTT, not HTTP
-- IoT Core provides MQTT broker functionality
-- Kinesis buffers high-frequency data
-- Snowflake handles all processing centrally
+```
+1. Sensor Generation
+   └─ Milesight UG65 Gateway or DevTank OSM
+   └─ Frequency: 1 Hz (sensors) to 1 min (air quality)
 
-### 4.2 HTTP API Data Flow
+2. MQTT Publish (TLS 1.3)
+   └─ Milesight UG65 → AWS IoT Core
+      Topic: smdh/{tenant_id}/sensor-data
+      Authentication: X.509 certificate
+   └─ DevTank OSM → AWS IoT Core (Wi-Fi)
+      Topic: smdh/{tenant_id}/devtank-data
+      Authentication: X.509 certificate
 
-**Scenario:** Legacy sensor systems sending production events via webhook
+3. IoT Rules Engine Routing
+   └─ SQL: SELECT *, '{tenant_id}' as tenant_id FROM 'smdh/+/+'
+   └─ Validates message structure
+   └─ Routes to Kinesis with tenant partition key
 
-**Flow:**
+4. Kinesis Buffering & Ordering
+   └─ Partition: {tenant_id}
+   └─ Guarantees: In-order delivery per tenant, 24h retention
+   └─ Throughput: On-demand, auto-scales with message volume
 
-1. **System → API Gateway**: HTTP POST with API key authentication
-2. **API Gateway → Lambda**: Validates request and API key
-3. **Lambda Processing**: Checks tenant ID, validates schema
-4. **Lambda → Snowflake**: Calls Snowpipe Streaming API
-5. **Snowflake Processing**: Same as MQTT path
+5. Snowflake Openflow Integration
+   └─ Native Kinesis connector (preview feature)
+   └─ Reads from Kinesis stream
+   └─ Writes to smdh_tenant_{tenant_id}.raw.sensor_readings
+   └─ Latency: 5-15 seconds end-to-end
 
-**Why this path:**
+6. Snowflake Processing
+   └─ Streams detect new data in raw tables
+   └─ Tasks normalize and transform (Python/SQL)
+   └─ Dynamic Tables aggregate to business metrics
+   └─ Cortex ML detects anomalies
 
-- Legacy site only supports HTTP webhooks
-- API Gateway provides rate limiting and authentication
-- Lambda adds validation layer before data enters Snowflake
+7. Analytics & Visualization
+   └─ Power BI: DirectQuery for real-time dashboards
+   └─ Streamlit: Native portal within Snowflake
+   └─ Users see data within 1-2 minutes of sensor reading
+```
 
-### 4.3 File Upload Flow
+**Why this architecture:**
 
-**Scenario:** Quality manager uploading monthly inspection reports
-
-**Flow:**
-
-1. **User → Streamlit**: Logs in with SSO credentials
-2. **File Upload**: Drag and drop Excel file
-3. **Streamlit → Stage**: Writes directly to Snowflake stage
-4. **Snowpipe → Tables**: Auto-ingests from stage
-5. **Processing**: Tasks validate and transform data
-
-**Why this path:**
-
-- Human-driven process needs user interface
-- Large files better handled as batch upload
-- No real-time requirements
+- All sensors are MQTT-native (gateways and devices)
+- Persistent connections handle continuous 1 Hz streams
+- X.509 certificates provide strong device authentication
+- Topic-based routing inherently multi-tenant
+- Kinesis provides buffering without custom code
+- No Lambda/validation layers = lower latency and cost
 
 ---
 
@@ -300,13 +279,14 @@ Centralised monitoring and logging for all AWS services. Collects metrics, store
 
 ### 5.1 Isolation Levels
 
-| Layer                 | Isolation Method                     | Rationale                          |
-| --------------------- | ------------------------------------ | ---------------------------------- |
-| **Device Level**      | Separate IoT certificates per tenant | Prevents device spoofing           |
-| **API Level**         | Unique API keys per tenant           | Simple tenant identification       |
-| **Lambda Level**      | Tenant validation before processing  | Prevents data injection attacks    |
-| **Database Level**    | Separate database per tenant         | Complete data isolation            |
-| **Application Level** | Role-based access control            | Users only see their tenant's data |
+| Layer                 | Isolation Method                              | Rationale                                          |
+| --------------------- | --------------------------------------------- | -------------------------------------------------- |
+| **Device Level**      | Separate X.509 certificates per gateway       | Prevents device spoofing, enables revocation       |
+| **Topic Level**       | Topic ACLs enforce `smdh/{tenant_id}/*` path  | Prevents cross-tenant topic access at IoT Core    |
+| **Rules Level**       | IoT Rules extract tenant from topic            | Validates tenant context before Kinesis routing    |
+| **Partition Level**   | Kinesis partitioned by {tenant_id}             | In-order delivery, isolation per tenant            |
+| **Database Level**    | Separate database per tenant in Snowflake      | Complete storage isolation                         |
+| **Application Level** | Role-based access control in Snowflake         | Users only see their tenant's data                 |
 
 ### 5.2 Why Database-per-Tenant?
 
@@ -354,38 +334,196 @@ Centralised monitoring and logging for all AWS services. Collects metrics, store
 
 ---
 
-## 7. Security Architecture
+## 7. AWS Account & Network Architecture
 
-### 7.1 Defense in Depth
+### 7.1 AWS Account Structure
 
-| Layer           | Security Control                             |
-| --------------- | -------------------------------------------- |
-| **Network**     | TLS 1.2+ for all communications              |
-| **Identity**    | Certificate-based for devices, SSO for users |
-| **Access**      | Least privilege IAM roles                    |
-| **Data**        | Encryption at rest and in transit            |
-| **Application** | Input validation, SQL injection prevention   |
-| **Monitoring**  | CloudTrail, VPC Flow Logs, Snowflake audit   |
+**Single-Account Strategy:**
 
-### 7.2 Key Security Decisions
+The SMDH platform operates in a single production AWS account in `eu-west-2` (London region).
 
-**Device authentication:** X.509 certificates over pre-shared keys
+```
+AWS Account: 123456789012 (smdh-production)
+├─ Region: eu-west-2 (London) - Primary
+├─ Services:
+│  ├─ AWS IoT Core (Global via regional endpoint)
+│  ├─ Kinesis Data Streams (Regional)
+│  ├─ Secrets Manager (Regional)
+│  └─ CloudWatch (Regional)
+└─ High Availability: Multi-AZ within region
+```
 
-- Reason: Certificates can be revoked, provide non-repudiation
+**Rationale:**
 
-**API authentication:** API keys over OAuth
+- Simplified billing and cost allocation
+- Single security boundary for compliance
+- No cross-account authentication complexity
+- IoT Core and Kinesis are regional services (benefits from multi-AZ)
 
-- Reason: Simpler for IoT devices, sufficient for server-to-server
+### 7.2 VPC Configuration
 
-**User authentication:** SSO via SAML
+**VPC Design Principle:** IoT devices are internet-connected; AWS services are either fully managed (serverless) or connect via managed endpoints.
 
-- Reason: Centralised identity management, MFA support
+```
+┌─────────────────────────────────────────────────────────┐
+│ AWS Account (eu-west-2)                                 │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐ │
+│  │ AWS IoT Core (Fully Managed - Public Endpoint)     │ │
+│  ├────────────────────────────────────────────────────┤ │
+│  │ - Regional endpoint: *.iot.eu-west-2.amazonaws.com │ │
+│  │ - No VPC required (managed service)                │ │
+│  │ - TLS 1.2/1.3 encryption in transit                │ │
+│  │ - Multi-AZ redundancy built-in                     │ │
+│  └────────────────────────────────────────────────────┘ │
+│                         ↓                                │
+│  ┌────────────────────────────────────────────────────┐ │
+│  │ IoT Rules Engine (Managed)                         │ │
+│  │ Routes MQTT → Kinesis with tenant context          │ │
+│  └────────────────────────────────────────────────────┘ │
+│                         ↓                                │
+│  ┌────────────────────────────────────────────────────┐ │
+│  │ Kinesis Data Streams (Fully Managed)               │ │
+│  ├────────────────────────────────────────────────────┤ │
+│  │ - Multi-AZ by default                             │ │
+│  │ - No VPC configuration needed                      │ │
+│  │ - Accessed via AWS API (no IP addresses)           │ │
+│  └────────────────────────────────────────────────────┘ │
+│                         ↓                                │
+│  ┌────────────────────────────────────────────────────┐ │
+│  │ Snowflake Openflow Connector                       │ │
+│  │ (Runs within Snowflake account, not in AWS VPC)    │ │
+│  │ Reads from Kinesis via IAM role cross-account      │ │
+│  └────────────────────────────────────────────────────┘ │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐ │
+│  │ Secrets Manager (Fully Managed)                    │ │
+│  ├────────────────────────────────────────────────────┤ │
+│  │ - Stores Snowflake private key                     │ │
+│  │ - No VPC needed (managed service)                  │ │
+│  │ - Accessed via AWS API                             │ │
+│  └────────────────────────────────────────────────────┘ │
+│                                                          │
+│  ┌────────────────────────────────────────────────────┐ │
+│  │ CloudWatch (Fully Managed)                         │ │
+│  ├────────────────────────────────────────────────────┤ │
+│  │ - Metrics from IoT Core, Kinesis, Rules Engine     │ │
+│  │ - Logs from all AWS services                       │ │
+│  │ - No VPC needed (managed service)                  │ │
+│  └────────────────────────────────────────────────────┘ │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
+
+External Connections:
+├─ Internet (Gateways/Devices) → AWS IoT Core (Public)
+│  └─ TLS 1.3, port 8883 (MQTT)
+└─ Snowflake (Cross-Account) → Kinesis via IAM Role
+   └─ Service-to-service, no internet
+```
+
+### 7.3 No VPC Required
+
+**Why we don't need a VPC:**
+
+All SMDH AWS components are **fully managed services** that don't require VPC hosting:
+
+| Service              | Type           | Network Access               | VPC Required? |
+| -------------------- | -------------- | ---------------------------- | ------------- |
+| **IoT Core**         | Managed        | Public endpoint via internet  | No            |
+| **Kinesis**          | Managed        | AWS API (internal)            | No            |
+| **Secrets Manager**   | Managed        | AWS API (internal)            | No            |
+| **CloudWatch**       | Managed        | AWS API (internal)            | No            |
+| **IAM**              | Managed        | Control plane only            | No            |
+
+**Trade-off:** No VPC means:
+- ✓ Simpler architecture, fewer components
+- ✓ No NAT gateways, no subnet management
+- ✓ Lower operational overhead
+- ✓ Multi-AZ redundancy automatic
+- ✗ IoT Core endpoint is internet-facing (mitigated by X.509 certs)
+
+### 7.4 Network Security Controls
+
+**At IoT Core:**
+
+1. **TLS 1.3 Encryption** - All MQTT connections must use TLS
+2. **X.509 Certificate Authentication** - Device identity verified
+3. **Topic ACLs** - Policy restricts devices to `smdh/{tenant_id}/*` topics only
+4. **Connection Policies** - Limits allowed actions per certificate
+
+**Example IoT Policy:**
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "iot:Connect",
+      "Resource": "arn:aws:iot:eu-west-2:*:client/smdh-gateway-TENANT_ID-*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "iot:Publish",
+      "Resource": "arn:aws:iot:eu-west-2:*:topic/smdh/TENANT_ID/*"
+    }
+  ]
+}
+```
+
+**At Kinesis:**
+
+1. **IAM Role-based Access** - Only Snowflake role can read
+2. **Encryption at Rest** - AWS managed keys (customer keys optional)
+3. **CloudTrail Logging** - All API calls logged
 
 ---
 
-## 8. Cost Optimisation
+## 8. Security Architecture
 
-### 8.1 Serverless-First Approach
+### 8.1 Defense in Depth
+
+| Layer           | Security Control                                       |
+| --------------- | ------------------------------------------------------ |
+| **Network**     | TLS 1.3 for all MQTT connections, regional endpoints  |
+| **Identity**    | X.509 certificates for devices (managed by AWS IoT)    |
+| **Access**      | Topic ACLs + IoT policies restrict per tenant          |
+| **Data**        | Encryption at rest (Kinesis) and in transit (TLS)      |
+| **Secrets**     | Secrets Manager for certificate rotation               |
+| **Monitoring**  | CloudTrail, CloudWatch metrics, Snowflake audit logs   |
+
+### 8.2 Key Security Decisions
+
+**Device authentication:** X.509 certificates (AWS IoT Core managed)
+
+- Reason: Industry standard for IoT, can be revoked, non-repudiation
+- Implementation: Auto-generate, store securely, rotate before expiry
+- Fallback: Manual certificate generation if needed
+
+**Topic Isolation:** MQTT topic patterns enforced by IoT policies
+
+- Reason: Prevents cross-tenant message injection
+- Example: Device with tenant_a cert cannot publish to smdh/tenant_b/*
+- Enforcement: Topic ACLs at IoT policy level
+
+**Encryption in Transit:** TLS 1.3 for all MQTT connections
+
+- Reason: Protects credentials and data from eavesdropping
+- Implementation: Mandatory via port 8883 (MQTT with TLS)
+- Verification: Certificate hostname validation on device
+
+**User authentication:** SSO via SAML in Snowflake
+
+- Reason: Centralised identity management, MFA support
+- Scope: Covers access to Streamlit portal and Power BI
+- Enforcement: Snowflake role-based access control
+
+---
+
+## 9. Cost Optimisation
+
+### 9.1 Serverless-First Approach
 
 **Why serverless?**
 
@@ -395,70 +533,106 @@ Centralised monitoring and logging for all AWS services. Collects metrics, store
 
 **Serverless components:**
 
-- Lambda (compute)
-- API Gateway (API management)
-- DynamoDB (database)
-- Kinesis On-Demand (streaming)
+- IoT Core (MQTT broker - pay per message)
+- Kinesis On-Demand (streaming - pay per shard-hour)
+- Secrets Manager (pay per secret + API calls)
+- CloudWatch (pay per metric + logs ingested)
 
-### 8.2 Cost Control Mechanisms
+### 9.2 Cost Control Mechanisms
 
-| Component         | Cost Control Strategy                       |
-| ----------------- | ------------------------------------------- |
-| **Lambda**        | Reserved capacity for predictable workloads |
-| **Kinesis**       | On-demand pricing, auto-scales down         |
-| **Snowflake**     | Auto-suspend warehouses, resource monitors  |
-| **Storage**       | Lifecycle policies, compression             |
-| **Data Transfer** | Keep within region to avoid charges         |
+| Component         | Cost Control Strategy                             |
+| ----------------- | ------------------------------------------------- |
+| **IoT Core**      | On-demand pricing, 26M messages/day well below limits |
+| **Kinesis**       | On-demand mode, auto-scales down to zero shards   |
+| **Secrets Mgr**   | ~$0.40/secret/month, no per-call charges         |
+| **CloudWatch**    | Log retention policies (90-180 days)             |
+| **Snowflake**     | Auto-suspend warehouses, resource monitors       |
 
 ---
 
-## 9. Operational Considerations
+## 10. Operational Considerations
 
-### 9.1 Monitoring Strategy
+### 10.1 Monitoring Strategy
 
-**What to monitor:**
+**What to monitor (AWS components):**
 
-- **Ingestion rate**: Messages per second by source
-- **Processing latency**: Time from sensor to queryable
-- **Error rates**: Failed validations, timeouts
-- **Resource utilization**: Lambda duration, Snowflake credits
-- **Business metrics**: Active sensors, data freshness
+| Metric                    | Source         | Target    | Threshold                |
+| ------------------------- | -------------- | --------- | ------------------------ |
+| **IoT Connections**       | CloudWatch     | Dashboard | Track active gateways     |
+| **MQTT Messages**         | CloudWatch     | Dashboard | Should be ~86K/sec peak   |
+| **Message Processing**    | CloudWatch     | Dashboard | <100ms latency           |
+| **Connection Errors**     | CloudWatch     | Alarm     | >5 failures in 5 min     |
+| **Certificate Expiry**    | CloudWatch     | Alarm     | <30 days until expiry    |
+| **Kinesis Iterator Age**  | CloudWatch     | Alarm     | >60 seconds              |
+| **CloudWatch Logs**       | CloudWatch     | Dashboard | Parse error patterns     |
 
-**How to monitor:**
+**What to monitor (Snowflake components):**
 
-- CloudWatch dashboards for AWS metrics
-- Snowflake dashboards for data metrics
-- Alerts via SNS for critical issues
+- Raw data ingestion rate
+- Task execution success/failure
+- Dynamic Table refresh latency
+- Storage growth per tenant
+- Query performance
 
-### 9.2 Maintenance Windows
+**How to implement:**
 
-**Zero-downtime deployments:**
+- **CloudWatch Dashboards**: Real-time AWS metrics
+- **CloudWatch Alarms**: SNS notifications for issues
+- **Snowflake System Views**: Query ingestion_metrics
+- **Automated Reports**: Daily health check summaries
 
-- Lambda versioning with alias updates
-- Blue-green deployments for critical paths
-- Snowflake changes during low-usage periods
+### 10.2 Alerting Strategy
+
+**Critical Alerts (Page on-call):**
+- IoT Core connection failures >5 in 5 minutes
+- Certificate expiring <7 days
+- Kinesis iterator age >2 minutes
+- Zero data for >30 minutes
+
+**Warning Alerts (Ticket):**
+- Kinesis iterator age >60 seconds
+- Snowflake task failures >3 in 1 hour
+- Connection errors >1 per minute
+- Disk space low warnings
+
+**Information Alerts (Log only):**
+- Successful tenant connections
+- Daily ingestion statistics
+- Certificate rotation completions
+
+### 10.3 Maintenance Windows
+
+**Zero-downtime operations:**
+
+- **Certificate rotation**: Deploy new certs before expiry (30-day window)
+- **IoT policy updates**: Changes effective immediately, no device reconnect required
+- **Kinesis configuration**: Modify partition count without data loss
+- **Snowflake changes**: Execute during low-traffic periods (typically 02:00-04:00 UTC)
 
 **Regular maintenance:**
 
-- Certificate rotation (automated via Secrets Manager)
-- Software updates (managed services handle this)
-- Data archival (automated via Snowflake policies)
+- **Certificate rotation** (automated): Secrets Manager triggers before expiry
+- **CloudWatch logs cleanup**: Automated via retention policies (90 days)
+- **IoT Core certificate expiry**: Monitor via CloudWatch alarms
+- **Snowflake data archival**: Automated via Time Travel and storage tiers
+- **CloudTrail logs**: Retained in S3 for 90 days (compliance requirement)
 
 ---
 
-## 10. Future Extensibility
+## 11. Future Extensibility
 
-### 10.1 Planned Enhancements
+### 11.1 Planned Enhancements
 
-| Enhancement            | Architecture Impact                          |
-| ---------------------- | -------------------------------------------- |
-| **Real-time alerting** | Add EventBridge for complex event processing |
-| **Machine learning**   | Leverage Snowflake Cortex or SageMaker       |
-| **Mobile app**         | API Gateway can serve mobile clients         |
-| **Edge processing**    | Add AWS IoT Greengrass for local compute     |
-| **Kafka integration**  | Replace/supplement Kinesis with MSK          |
+| Enhancement                | Architecture Impact                                   |
+| -------------------------- | ----------------------------------------------------- |
+| **Real-time alerting**     | Add EventBridge for complex event processing         |
+| **Machine learning**       | Leverage Snowflake Cortex ML built-in features       |
+| **Mobile dashboards**      | Extend Snowflake Streamlit with mobile-optimized UI  |
+| **Edge processing**        | Add AWS IoT Greengrass for local anomaly detection   |
+| **PrivateLink**            | Optional encrypted connection for on-prem Snowflake  |
+| **Multi-region failover**  | Secondary region with Kinesis replication            |
 
-### 10.2 Architecture Flexibility
+### 11.2 Architecture Flexibility
 
 The architecture supports future changes through:
 
@@ -469,48 +643,52 @@ The architecture supports future changes through:
 
 ---
 
-## 11. Decision Log
+## 12. Decision Log
 
-### 11.1 Key Architecture Decisions
+### 12.1 Key Architecture Decisions
 
-| Decision              | Choice                 | Alternative Considered | Rationale                                         |
-| --------------------- | ---------------------- | ---------------------- | ------------------------------------------------- |
-| **MQTT Broker**       | AWS IoT Core           | EMQ X, Mosquitto       | Managed service, scales automatically             |
-| **Stream Processing** | Kinesis                | Kafka, SQS             | Native AWS integration, less operational overhead |
-| **Data Warehouse**    | Snowflake              | Redshift, BigQuery     | Superior semi-structured data handling            |
-| **Web Framework**     | Streamlit in Snowflake | React + ECS            | Faster development, no infrastructure             |
-| **Multi-tenancy**     | Database-per-tenant    | Row-level security     | Stronger isolation, simpler operations            |
+| Decision                   | Choice                   | Alternative Considered | Rationale                                      |
+| -------------------------- | ------------------------ | ---------------------- | ---------------------------------------------- |
+| **MQTT Broker**            | AWS IoT Core             | EMQ X, Mosquitto       | Fully managed, scales to millions, native AWS  |
+| **Stream Processing**      | Kinesis (on-demand)      | Kafka/MSK, SQS         | Native integration, no cluster management      |
+| **Data Warehouse**         | Snowflake                | Redshift, BigQuery     | Superior semi-structured data handling         |
+| **Web Framework**          | Streamlit in Snowflake   | React + ECS            | Faster development, no separate infrastructure |
+| **Multi-tenancy**          | Database-per-tenant      | Row-level security     | Stronger isolation, simpler operations         |
+| **Device Authentication**  | X.509 certificates       | Pre-shared keys        | Can be revoked, non-repudiation                |
+| **Network Design**         | No VPC (managed only)    | Custom VPC             | Simpler, IoT needs internet-facing endpoint    |
+| **Regional Deployment**    | Single region (eu-west-2) | Multi-region          | Cost-effective, compliance, gateway proximity  |
 
-### 11.2 Trade-offs Accepted
+### 12.2 Trade-offs Accepted
 
-| Trade-off                    | Benefit Gained       | Risk Mitigation                       |
-| ---------------------------- | -------------------- | ------------------------------------- |
-| **Multiple ingestion paths** | Protocol flexibility | Standardize at Snowflake layer        |
-| **Managed services lock-in** | Reduced operations   | Use standard protocols where possible |
-| **Higher Snowflake costs**   | Unified platform     | Optimise with resource monitors       |
-| **Eventual consistency**     | Better performance   | Design UI for eventual consistency    |
+| Trade-off                         | Benefit Gained                     | Risk Mitigation                              |
+| --------------------------------- | ---------------------------------- | -------------------------------------------- |
+| **MQTT-only (no HTTP)**           | Simpler architecture, lower latency | File uploads handled via Streamlit           |
+| **Managed services lock-in**      | Reduced operations, high reliability| Standard protocols (MQTT, AWS APIs)          |
+| **Internet-facing IoT endpoint**  | No NAT overhead, simpler network   | Mitigated by X.509 certs + topic ACLs        |
+| **Eventual consistency**          | Better performance, scalability    | Design dashboards for eventual consistency   |
+| **Single region**                 | Simplified ops, cost optimization  | Multi-region failover via Kinesis replication |
 
 ---
 
-## 12. Tenant Onboarding Process
+## 13. Tenant Onboarding Process
 
-### 12.1 Overview
+### 13.1 Overview
 
 Onboarding a new tenant involves configuring resources across AWS and Snowflake to ensure complete isolation, proper authentication, and correct data routing. This process should be automated through Infrastructure as Code (IaC) but is documented here for understanding.
 
-### 12.2 Tenant Onboarding Checklist
+### 13.2 Tenant Onboarding Checklist
 
-| Phase                  | Component         | Configuration Required           | Responsible Team         |
-| ---------------------- | ----------------- | -------------------------------- | ------------------------ |
-| **1. Planning**        | Business Setup    | Contract, SLAs, data volumes     | Sales/Account Management |
-| **2. Identity**        | User Accounts     | SSO setup, user list, roles      | Identity Team            |
-| **3. AWS Setup**       | IoT & API Gateway | Certificates, API keys, policies | Platform Team            |
-| **4. Snowflake Setup** | Database & Roles  | Database creation, RBAC setup    | Data Team                |
-| **5. Application**     | Portal Access     | Streamlit configuration          | Application Team         |
-| **6. Validation**      | End-to-end Test   | Data flow verification           | QA Team                  |
-| **7. Production**      | Go-live           | Monitoring, alerts, support      | Operations Team          |
+| Phase                  | Component         | Configuration Required              | Responsible Team         |
+| ---------------------- | ----------------- | ----------------------------------- | ------------------------ |
+| **1. Planning**        | Business Setup    | Contract, SLAs, data volumes        | Sales/Account Management |
+| **2. Identity**        | User Accounts     | SSO setup, user list, roles         | Identity Team            |
+| **3. AWS Setup**       | IoT Core & Rules  | X.509 certificates, topic ACLs      | Platform Team            |
+| **4. Snowflake Setup** | Database & Roles  | Database creation, RBAC setup       | Data Team                |
+| **5. Application**     | Portal Access     | Streamlit configuration             | Application Team         |
+| **6. Validation**      | End-to-end Test   | Data flow verification              | QA Team                  |
+| **7. Production**      | Go-live           | Monitoring, alerts, certificate mgmt | Operations Team          |
 
-### 12.3 Detailed Configuration Steps
+### 13.3 Detailed Configuration Steps
 
 #### Phase 1: Initial Setup and Planning
 
@@ -597,39 +775,9 @@ Action:
 - Error Action: Republish to smdh/company_a/errors
 ```
 
-#### Phase 3: API Gateway Configuration (for HTTP devices)
+#### Phase 3: Snowflake Configuration
 
-**Step 3.1: Generate API Key**
-
-```
-Component: API Gateway
-Purpose: HTTP authentication
-
-API Key: smdh-prod-company-a-{32-char-random}
-Usage Plan: smdh-production-tier
-Quota: 100M requests/month
-Throttle: 1000 requests/second
-```
-
-**Step 3.2: Update DynamoDB Mapping**
-
-```
-Component: DynamoDB Table (smdh_api_key_mapping)
-Purpose: Map API key to tenant
-
-Item:
-{
-  "api_key": "smdh-prod-company-a-xxx",
-  "tenant_id": "company_a",
-  "created_date": "2024-11-13",
-  "status": "active",
-  "contact_email": "tech@companya.com"
-}
-```
-
-#### Phase 4: Snowflake Configuration
-
-**Step 4.1: Create Tenant Database**
+**Step 3.1: Create Tenant Database**
 
 ```sql
 Component: Snowflake
@@ -653,7 +801,7 @@ CREATE SCHEMA smdh_tenant_company_a.analytics
   COMMENT = 'Analytics views and ML results';
 ```
 
-**Step 4.2: Create Tables**
+**Step 3.2: Create Tables**
 
 ```sql
 Component: Snowflake Tables
@@ -676,7 +824,7 @@ CREATE TABLE smdh_tenant_company_a.raw.uploaded_files (...);
 CREATE TABLE smdh_tenant_company_a.raw.api_events (...);
 ```
 
-**Step 4.3: Setup Streaming Objects**
+**Step 3.3: Setup Streaming Objects**
 
 ```sql
 Component: Snowflake Streams & Tasks
@@ -700,7 +848,7 @@ AS
 ALTER TASK process_sensor_data RESUME;
 ```
 
-**Step 4.4: Create Roles and Users**
+**Step 3.4: Create Roles and Users**
 
 ```sql
 Component: Snowflake RBAC
@@ -730,7 +878,7 @@ CREATE USER john_smith_company_a
 GRANT ROLE tenant_company_a_user TO USER john_smith_company_a;
 ```
 
-**Step 4.5: Configure Dynamic Tables**
+**Step 3.5: Configure Dynamic Tables**
 
 ```sql
 Component: Snowflake Dynamic Tables
@@ -749,9 +897,9 @@ FROM smdh_tenant_company_a.normalized.sensor_metrics
 GROUP BY machine_id, hour;
 ```
 
-#### Phase 5: Streamlit Portal Configuration
+#### Phase 4: Streamlit Portal Configuration
 
-**Step 5.1: Tenant Configuration File**
+**Step 4.1: Tenant Configuration File**
 
 ```python
 Component: Streamlit Configuration
@@ -777,7 +925,7 @@ tenant:
     - quality_metrics
 ```
 
-**Step 5.2: Access Control**
+**Step 4.2: Access Control**
 
 ```python
 Component: Streamlit Access
@@ -788,9 +936,9 @@ Purpose: Tenant isolation in UI
 # No code changes needed - handled by Snowflake context
 ```
 
-#### Phase 6: Monitoring and Alerting Setup
+#### Phase 5: Monitoring and Alerting Setup
 
-**Step 6.1: CloudWatch Dashboards**
+**Step 5.1: CloudWatch Dashboards**
 
 ```
 Component: AWS CloudWatch
@@ -798,73 +946,83 @@ Purpose: Tenant-specific monitoring
 
 Dashboard: smdh-company-a-dashboard
 Widgets:
-- Message ingestion rate
-- Error rate
-- Lambda invocations
-- API Gateway requests
+- MQTT message ingestion rate
+- Connection errors
+- IoT Rule failures
 - Kinesis iterator age
-- DLQ message count
+- Certificate expiry countdown
+- Data latency (Kinesis to Snowflake)
 ```
 
-**Step 6.2: Alerting Rules**
+**Step 5.2: Alerting Rules**
 
 ```
 Component: CloudWatch Alarms + SNS
 Purpose: Operational alerts
 
 Alarms:
-- High error rate (>1% for 5 minutes)
-- No data received (0 messages for 15 minutes)
-- Lambda errors (>10 in 5 minutes)
+- Connection failures (>5 in 5 minutes)
+- Certificate expiry (<7 days)
+- MQTT message drop rate (>1%)
 - Kinesis iterator age (>60 seconds)
-- API throttling (>100 throttled requests)
+- IoT Rule errors (>5 in 5 minutes)
+- Zero data received (>30 minutes)
 
 SNS Topic: smdh-alerts-company-a
 Subscribers: ops-team@company.com, tenant-contact@companya.com
 ```
 
-#### Phase 7: Gateway Configuration
+#### Phase 6: Gateway Configuration
 
-**Step 7.1: Physical Device Setup**
+**Step 6.1: Physical Device Setup (Milesight UG65)**
 
 ```
 Component: Milesight UG65 Gateway
-Purpose: Field device configuration
+Purpose: Field device MQTT configuration
 
-For MQTT path:
+Configuration:
 - Server: {iot-endpoint}.iot.eu-west-2.amazonaws.com
-- Port: 8883
+- Port: 8883 (MQTT with TLS)
 - Client ID: smdh-gateway-company-a-site-001
-- Certificate: Upload company-a-cert.pem
+- Certificate: Upload company-a-cert.pem (X.509)
 - Private Key: Upload company-a-private.key
 - CA Certificate: Upload AmazonRootCA1.pem
 - Topic: smdh/company_a/sensor-data
-- QoS: 1
-
-For HTTP path:
-- URL: https://{api-id}.execute-api.eu-west-2.amazonaws.com/prod/ingest
-- Header: x-api-key: smdh-prod-company-a-xxx
-- Method: POST
-- Content-Type: application/json
-- Retry: Enabled with exponential backoff
+- QoS: 1 (at-least-once delivery)
+- Keep Alive: 60 seconds
+- Offline Buffer: 10,000 messages (store-and-forward)
 ```
 
-### 12.4 Validation Tests
+**Step 6.2: DevTank OSM Setup (Wi-Fi MQTT)**
+
+```
+Configuration:
+- Server: {iot-endpoint}.iot.eu-west-2.amazonaws.com
+- Port: 8883 (MQTT with TLS)
+- Wi-Fi Network: Company A production network
+- Certificate: Upload company-a-osm-cert.pem
+- Topic: smdh/company_a/devtank-data
+- QoS: 1
+- Frequency: 1-15 minute intervals (configurable)
+```
+
+### 13.4 Validation Tests
 
 **End-to-End Test Checklist:**
 
-| Test                    | Description                               | Expected Result                         |
-| ----------------------- | ----------------------------------------- | --------------------------------------- |
-| **Device Connectivity** | Gateway connects to IoT Core/API Gateway  | Connection successful, no auth errors   |
-| **Data Ingestion**      | Send test message from gateway            | Message appears in Snowflake within 30s |
-| **Tenant Isolation**    | Try to access another tenant's topic/data | Access denied (403 error)               |
-| **User Access**         | Login to Streamlit portal                 | Only see company_a data                 |
-| **File Upload**         | Upload CSV via portal                     | File processed and visible in tables    |
-| **Monitoring**          | Generate error condition                  | Alert received via SNS                  |
-| **Dashboards**          | View analytics dashboards                 | Metrics display correctly               |
-| **API Rate Limit**      | Send burst of requests                    | Throttling kicks in at limit            |
+| Test                      | Description                                 | Expected Result                         |
+| ------------------------- | ------------------------------------------- | --------------------------------------- |
+| **MQTT Connection**       | Gateway connects to IoT Core with X.509     | Connection successful, no auth errors   |
+| **Message Ingestion**     | Send test message from gateway              | Message appears in Snowflake within 30s |
+| **Tenant Topic ACLs**     | Try to publish to another tenant's topic    | Access denied (403 error)               |
+| **DevTank Wi-Fi**         | Connect DevTank OSM via Wi-Fi               | Connects, sends data to IoT Core        |
+| **Data Routing**          | Verify data in correct Kinesis partition    | Partition key matches tenant_id         |
+| **User Access**           | Login to Streamlit portal with SSO          | Only see company_a data                 |
+| **Certificate Rotation**  | Trigger cert rotation via Secrets Manager   | New cert deployed, old connections drop |
+| **Monitoring**            | Generate IoT error (bad topic)              | Alert received via SNS within 5 min     |
+| **Dashboards**            | View CloudWatch metrics                     | Real-time ingestion metrics displayed   |
 
-### 12.5 Automation Script Example
+### 13.5 Automation Script Example
 
 ```bash
 #!/bin/bash
@@ -899,19 +1057,7 @@ aws iot create-policy --policy-name "smdh-policy-${TENANT_ID}" \
 aws iot attach-policy --policy-name "smdh-policy-${TENANT_ID}" \
   --target $CERT_ARN --region $AWS_REGION
 
-# 4. API Gateway setup
-API_KEY=$(openssl rand -hex 32)
-aws apigateway create-api-key --name "smdh-${TENANT_ID}" \
-  --value "smdh-prod-${TENANT_ID}-${API_KEY}" \
-  --enabled --region $AWS_REGION
-
-# 5. DynamoDB entry
-aws dynamodb put-item --table-name smdh_api_key_mapping \
-  --item "{\"api_key\":{\"S\":\"smdh-prod-${TENANT_ID}-${API_KEY}\"}, \
-           \"tenant_id\":{\"S\":\"${TENANT_ID}\"}}" \
-  --region $AWS_REGION
-
-# 6. Snowflake setup (via SnowSQL)
+# 4. Snowflake setup (via SnowSQL)
 snowsql -a $SNOWFLAKE_ACCOUNT -u admin_user -f templates/create_tenant_database.sql \
   --variable tenant_id=$TENANT_ID \
   --variable tenant_name="$TENANT_NAME"
@@ -919,18 +1065,41 @@ snowsql -a $SNOWFLAKE_ACCOUNT -u admin_user -f templates/create_tenant_database.
 echo "Tenant onboarding complete for $TENANT_ID"
 ```
 
-### 12.6 Rollback Procedures
+### 13.6 Rollback Procedures
 
 If onboarding fails or tenant needs to be removed:
 
-1. **Disable IoT certificates** (prevents new data)
-2. **Deactivate API keys** (blocks HTTP access)
-3. **Suspend Snowflake tasks** (stops processing)
-4. **Backup tenant database** (preserve data)
-5. **Remove IAM roles** (revoke permissions)
-6. **Clean up resources** (delete in reverse order)
+1. **Disable IoT certificates** (prevents new connections)
+   ```bash
+   aws iot update-certificate --certificate-id $CERT_ID --new-status INACTIVE
+   ```
 
-### 12.7 Tenant Lifecycle Management
+2. **Deactivate IoT policies** (blocks all device access)
+   ```bash
+   # Create new policy without permissions, attach to cert
+   ```
+
+3. **Suspend Snowflake tasks** (stops ETL processing)
+   ```sql
+   ALTER TASK smdh_tenant_${TENANT_ID}.raw.task_process_data SUSPEND;
+   ```
+
+4. **Backup tenant database** (preserve data)
+   ```sql
+   CREATE DATABASE smdh_tenant_${TENANT_ID}_backup CLONE smdh_tenant_${TENANT_ID};
+   ```
+
+5. **Remove IoT Rules** (stops message routing)
+   ```bash
+   aws iot delete-topic-rule --rule-name smdh_route_${TENANT_ID}
+   ```
+
+6. **Clean up resources** (delete in reverse order)
+   - Drop Snowflake database
+   - Delete IoT policies and certificates
+   - Remove Kinesis subscription
+
+### 13.7 Tenant Lifecycle Management
 
 | Event            | Action Required                     | Timeline            |
 | ---------------- | ----------------------------------- | ------------------- |
@@ -943,37 +1112,48 @@ If onboarding fails or tenant needs to be removed:
 
 ---
 
-## 13. Conclusion
+## 14. Conclusion
 
-The SMDH architecture balances several competing requirements:
+The SMDH AWS architecture achieves simplicity through focus:
 
-- **Flexibility** to handle diverse data sources
-- **Simplicity** through managed services
-- **Security** via multi-layered isolation
-- **Scalability** using cloud-native patterns
-- **Cost-effectiveness** with serverless and on-demand pricing
+- **Single Protocol**: MQTT native for all sensor data (no HTTP conversion)
+- **Managed Services**: IoT Core, Kinesis, CloudWatch eliminate ops overhead
+- **Clear Isolation**: Multi-layer tenant isolation from device to database
+- **Operational Focus**: Comprehensive monitoring, alerting, and certificate management
+- **Cost Effective**: Serverless on-demand pricing, no idle resources
 
-By choosing ingestion paths based on data source protocols rather than forcing a one-size-fits-all approach, we achieve optimal performance and reliability while maintaining operational simplicity.
+By standardizing on MQTT and using AWS managed services, we eliminate custom validation layers, reduce latency, and minimize operational complexity. The architecture is designed to scale smoothly as tenant count grows from 5 to 30+ customers.
 
-The architecture is designed to start simple and grow with the business, adding capabilities as needed without major redesigns. The comprehensive tenant onboarding process ensures consistent, secure deployment for each new customer.
+The AWS layer is intentionally minimal and focused—just four core services (IoT Core, Kinesis, Secrets Manager, CloudWatch) orchestrate all sensor data ingestion. Snowflake handles all data processing, analytics, and user-facing applications.
 
 ---
 
 ## Appendix A: Component Mapping
 
-| Business Requirement   | Technical Component | AWS Service     |
-| ---------------------- | ------------------- | --------------- |
-| Receive sensor data    | MQTT broker         | IoT Core        |
-| Handle HTTP webhooks   | REST API            | API Gateway     |
-| Buffer streaming data  | Message queue       | Kinesis         |
-| Validate and transform | Compute layer       | Lambda          |
-| Store sensor data      | Data warehouse      | Snowflake       |
-| Upload files           | Web portal          | Streamlit       |
-| Manage credentials     | Secrets store       | Secrets Manager |
-| Monitor system         | Observability       | CloudWatch      |
-| Send alerts            | Notification        | SNS             |
+| Business Requirement        | Technical Component        | AWS Service           | Status      |
+| --------------------------- | -------------------------- | --------------------- | ----------- |
+| Receive MQTT sensor data    | MQTT broker + Rules Engine | IoT Core + IoT Rules  | **Active**  |
+| Buffer streaming data       | Message queue              | Kinesis               | **Active**  |
+| Store sensor data           | Data warehouse             | Snowflake (external)  | **Active**  |
+| Upload files                | Web portal                 | Streamlit (Snowflake) | **Active**  |
+| Manage credentials          | Secrets store              | Secrets Manager       | **Active**  |
+| Monitor system              | Observability              | CloudWatch            | **Active**  |
+| Send alerts                 | Notification               | SNS                   | **Active**  |
+| Geo-distributed apps        | Edge processing            | IoT Greengrass        | **Future**  |
+| Complex event processing    | Real-time rules            | EventBridge           | **Future**  |
 
-## Appendix B: Glossary
+## Appendix B: AWS Pricing Estimate (30 Tenants, 26M msgs/day)
+
+| Service          | Metric             | Monthly Cost  | Notes                                  |
+| ---------------- | ------------------ | ------------- | -------------------------------------- |
+| **IoT Core**     | 26M messages/day   | ~$130         | $0.12 per million messages             |
+| **Kinesis**      | On-demand 1 shard  | ~$15-20       | On-demand scales down, 24h retention   |
+| **Secrets Mgr**  | 1 secret           | ~$0.40        | One secret for Snowflake private key   |
+| **CloudWatch**   | 200GB logs/month   | ~$100         | Includes metrics, logs, alarms         |
+| **AWS Total**    |                    | ~**$250/mo**  | Approximately $8-10 per tenant/month   |
+| **Snowflake**    | 30 tenants         | ~$5-10K/mo    | Dominated by data storage & compute    |
+
+## Appendix C: Glossary
 
 | Term               | Definition                                                       |
 | ------------------ | ---------------------------------------------------------------- |

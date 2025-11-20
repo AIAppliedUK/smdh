@@ -86,24 +86,9 @@ The SMDH platform must accommodate diverse data sources, each with specific tran
 
 ### 1.3 Architecture Options Based on Data Transport
 
-**Option 1: Direct HTTP Ingestion (API Gateway → Lambda → Snowflake)**
-
-- **When applicable**: Only for sensors/gateways that support HTTP/REST APIs
-- **Limitation**: Cannot support MQTT-based sensors without IoT Core
-- **Use case**: Milesight UG65 configured for HTTP POST, legacy system webhooks
-
-**Option 2: MQTT + Streaming (IoT Core → Kinesis/Kafka → Snowflake)**
-
-- **When required**: MQTT-based sensors (majority of IoT devices)
-- **Benefits**: Native MQTT support, message ordering, buffering
-- **Components**: AWS IoT Core (MQTT broker) → Kinesis/Kafka (buffering) → Snowflake
-
-**Option 3: Hybrid Architecture (Multiple Ingestion Paths)**
-
 - **Real-time MQTT sensors**: IoT Core → Kinesis → Snowflake
 - **HTTP/REST sources**: API Gateway → Lambda → Snowflake
 - **File uploads**: Streamlit interface → Snowflake stages
-- **Flexibility**: Accommodates all data source types optimally
 
 ### 1.4 Key Architecture Decisions
 
@@ -182,7 +167,7 @@ All Raw Tables → Streams → Tasks → Dynamic Tables
 **Key Design Decisions:**
 
 - **MQTT requires IoT Core**: Cannot directly connect MQTT devices to Snowflake
-- **Kinesis/Kafka for streaming**: Provides buffering, ordering, and replay capabilities
+- **Kinesis for streaming**: Provides buffering, ordering, and replay capabilities
 - **API Gateway for HTTP**: Centralized security and rate limiting for REST APIs
 - **Streamlit for user uploads**: Native Snowflake integration for file handling
 - **Unified processing**: All data converges in Snowflake regardless of ingestion path
@@ -237,12 +222,9 @@ All Raw Tables → Streams → Tasks → Dynamic Tables
 
 ## 3. Data Ingestion Layer
 
-### 3.1 Protocol-Driven Ingestion Architecture
+### 3.1 Ingestion Architecture
 
-The SMDH platform implements **protocol-specific ingestion paths** based on how data sources communicate:
-
-**Why Multiple Ingestion Paths?**
-Different data sources have inherent protocol requirements that dictate the ingestion architecture:
+The SMDH platform implements protocol-specific ingestion paths based on how data sources communicate. Different data sources have protocol and authentication requirements that dictate the ingestion architecture:
 
 - **MQTT devices** cannot directly connect to Snowflake (requires MQTT broker)
 - **HTTP/REST sources** can use API Gateway but need validation layer
