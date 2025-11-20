@@ -1,292 +1,169 @@
 <mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/28.2.8 Chrome/140.0.7339.240 Electron/38.4.0 Safari/537.36" version="28.2.8">
-  <diagram name="SMDH Dual-Path Architecture" id="dual-path-architecture">
+  <diagram name="SMDH IoT Core Architecture" id="iot-core-single-path">
     <mxGraphModel dx="1927" dy="1216" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
 
         <!-- Title -->
-        <mxCell id="title" value="SMDH Dual-Path Architecture&#xa;IoT Core + Kinesis + Snowflake Openflow | Streamlit File Upload" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1" parent="1" vertex="1">
-          <mxGeometry x="350" y="10" width="700" height="50" as="geometry" />
+        <mxCell id="title" value="SMDH IoT Core Architecture&#xa;Real-Time Sensor Data via MQTT → Kinesis → Snowflake" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1" parent="1" vertex="1">
+          <mxGeometry x="250" y="10" width="900" height="50" as="geometry" />
         </mxCell>
 
-        <!-- PATH 1: IoT Core + Kinesis -->
-        <mxCell id="path1-container" value="PATH 1: Real-Time Sensor Data (IoT Core + Kinesis + Openflow)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontStyle=1" parent="1" vertex="1">
-          <mxGeometry x="40" y="80" width="650" height="380" as="geometry" />
+        <!-- Main IoT Path -->
+        <mxCell id="path-container" value="Real-Time Sensor Data Pipeline: IoT Core + Kinesis + Openflow" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontStyle=1" parent="1" vertex="1">
+          <mxGeometry x="40" y="80" width="1320" height="280" as="geometry" />
         </mxCell>
 
         <!-- Sensors -->
-        <mxCell id="sensors" value="Sensors&#xa;(1 Hz)&#xa;30-45 devices" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1" parent="path1-container" vertex="1">
+        <mxCell id="sensors" value="Sensors&#xa;(1 Hz)&#xa;30-45 devices" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1" parent="path-container" vertex="1">
           <mxGeometry x="20" y="40" width="90" height="70" as="geometry" />
         </mxCell>
 
         <!-- Gateway -->
-        <mxCell id="ug65-gateway" value="UG65 Gateway&#xa;LoRaWAN → MQTT&#xa;X.509 Auth" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1" parent="path1-container" vertex="1">
+        <mxCell id="ug65-gateway" value="UG65 Gateway&#xa;LoRaWAN → MQTT&#xa;X.509 Auth" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1" parent="path-container" vertex="1">
           <mxGeometry x="130" y="40" width="100" height="70" as="geometry" />
         </mxCell>
 
+        <!-- DevTank OSM -->
+        <mxCell id="devtank" value="DevTank OSM&#xa;Wi-Fi MQTT&#xa;X.509 Auth" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#558b2f;fontStyle=1" parent="path-container" vertex="1">
+          <mxGeometry x="130" y="130" width="100" height="70" as="geometry" />
+        </mxCell>
+
         <!-- IoT Core -->
-        <mxCell id="iot-core" value="AWS IoT Core&#xa;MQTT Broker&#xa;Device Registry" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1" parent="path1-container" vertex="1">
+        <mxCell id="iot-core" value="AWS IoT Core&#xa;MQTT Broker&#xa;Device Registry" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1" parent="path-container" vertex="1">
           <mxGeometry x="250" y="40" width="110" height="70" as="geometry" />
         </mxCell>
 
         <!-- IoT Rules -->
-        <mxCell id="iot-rules" value="IoT Rules&#xa;Engine&#xa;SQL Routing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="path1-container" vertex="1">
-          <mxGeometry x="250" y="130" width="110" height="70" as="geometry" />
+        <mxCell id="iot-rules" value="IoT Rules&#xa;Engine&#xa;SQL Routing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="path-container" vertex="1">
+          <mxGeometry x="380" y="40" width="110" height="70" as="geometry" />
         </mxCell>
 
         <!-- Kinesis -->
-        <mxCell id="kinesis" value="Kinesis Data&#xa;Streams&#xa;On-Demand" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1" parent="path1-container" vertex="1">
-          <mxGeometry x="380" y="130" width="110" height="70" as="geometry" />
+        <mxCell id="kinesis" value="Kinesis Data&#xa;Streams&#xa;On-Demand" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1" parent="path-container" vertex="1">
+          <mxGeometry x="510" y="40" width="110" height="70" as="geometry" />
         </mxCell>
 
         <!-- Snowflake Openflow -->
-        <mxCell id="openflow" value="Snowflake&#xa;Openflow Kinesis&#xa;Connector" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;fontStyle=1" parent="path1-container" vertex="1">
-          <mxGeometry x="510" y="130" width="120" height="70" as="geometry" />
+        <mxCell id="openflow" value="Snowflake&#xa;Openflow Kinesis&#xa;Connector" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;fontStyle=1" parent="path-container" vertex="1">
+          <mxGeometry x="640" y="40" width="120" height="70" as="geometry" />
         </mxCell>
 
         <!-- Snowflake Raw Table -->
-        <mxCell id="snowflake-raw-path1" value="Snowflake&#xa;Raw Table&#xa;sensor_readings" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;fontStyle=1" parent="path1-container" vertex="1">
-          <mxGeometry x="510" y="220" width="120" height="70" as="geometry" />
+        <mxCell id="snowflake-raw" value="Snowflake&#xa;Raw Table&#xa;sensor_readings" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;fontStyle=1" parent="path-container" vertex="1">
+          <mxGeometry x="800" y="40" width="120" height="70" as="geometry" />
         </mxCell>
 
-        <!-- Arrows PATH 1 -->
-        <mxCell id="arrow-p1-1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#00796B;" parent="path1-container" source="sensors" target="ug65-gateway" edge="1">
+        <!-- Snowflake Processing -->
+        <mxCell id="snowflake-proc" value="Streams, Tasks&#xa;Dynamic Tables&#xa;Cortex ML" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" parent="path-container" vertex="1">
+          <mxGeometry x="960" y="40" width="120" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Analytics -->
+        <mxCell id="analytics" value="Streamlit&#xa;Dashboards&#xa;Power BI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6d0de;strokeColor=#996185;fontStyle=1" parent="path-container" vertex="1">
+          <mxGeometry x="1120" y="40" width="120" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows -->
+        <mxCell id="arrow-1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#00796B;" parent="path-container" source="sensors" target="ug65-gateway" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
-        <mxCell id="arrow-p1-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#D84315;" parent="path1-container" source="ug65-gateway" target="iot-core" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="label-p1-2" value="MQTT&#xa;(TLS 1.3)" style="text;html=1;strokeColor=none;fillColor=#fff;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fontStyle=1" parent="path1-container" vertex="1">
-          <mxGeometry x="235" y="50" width="50" height="30" as="geometry" />
-        </mxCell>
-
-        <mxCell id="arrow-p1-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#D84315;" parent="path1-container" source="iot-core" target="iot-rules" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <mxCell id="arrow-p1-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#D84315;" parent="path1-container" source="iot-rules" target="kinesis" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <mxCell id="arrow-p1-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=4;strokeColor=#0D47A1;" parent="path1-container" source="kinesis" target="openflow" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="label-p1-5" value="Native&#xa;Connector" style="text;html=1;strokeColor=none;fillColor=#d5e8d4;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fontStyle=1" parent="path1-container" vertex="1">
-          <mxGeometry x="495" y="140" width="60" height="30" as="geometry" />
-        </mxCell>
-
-        <mxCell id="arrow-p1-6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#0D47A1;" parent="path1-container" source="openflow" target="snowflake-raw-path1" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- Path 1 Stats -->
-        <mxCell id="path1-stats" value="Latency: 5-15 seconds&#xa;Volume: 2.6M-3.9M msgs/day&#xa;No Lambda Required" style="text;html=1;strokeColor=#82b366;fillColor=#d5e8d4;align=left;verticalAlign=top;whiteSpace=wrap;rounded=1;fontSize=10;fontStyle=1" parent="path1-container" vertex="1">
-          <mxGeometry x="20" y="310" width="610" height="50" as="geometry" />
-        </mxCell>
-
-        <!-- PATH 2: Streamlit File Upload -->
-        <mxCell id="path2-container" value="PATH 2: Batch File Upload (Streamlit)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontStyle=1" parent="1" vertex="1">
-          <mxGeometry x="730" y="80" width="630" height="380" as="geometry" />
-        </mxCell>
-
-        <!-- User Browser -->
-        <mxCell id="user-browser" value="User Browser&#xa;SSO Login&#xa;(Snowflake IAM)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6d0de;strokeColor=#996185;fontStyle=1" parent="path2-container" vertex="1">
-          <mxGeometry x="20" y="40" width="100" height="70" as="geometry" />
-        </mxCell>
-
-        <!-- Streamlit Portal -->
-        <mxCell id="streamlit-portal" value="Streamlit Portal&#xa;file_uploader()&#xa;Python Framework" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;fontStyle=1" parent="path2-container" vertex="1">
-          <mxGeometry x="140" y="40" width="120" height="70" as="geometry" />
-        </mxCell>
-
-        <!-- File Preview -->
-        <mxCell id="file-preview" value="Data Preview&#xa;Quality Checks&#xa;Validation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" parent="path2-container" vertex="1">
-          <mxGeometry x="140" y="130" width="120" height="70" as="geometry" />
-        </mxCell>
-
-        <!-- Snowpark Write -->
-        <mxCell id="snowpark-write" value="Snowpark&#xa;DataFrame&#xa;Direct Write" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;fontStyle=1" parent="path2-container" vertex="1">
-          <mxGeometry x="280" y="130" width="120" height="70" as="geometry" />
-        </mxCell>
-
-        <!-- Snowflake Stage (alternative) -->
-        <mxCell id="snowflake-stage" value="Snowflake Stage&#xa;(Large Files)&#xa;Optional" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;dashed=1;" parent="path2-container" vertex="1">
-          <mxGeometry x="280" y="40" width="120" height="70" as="geometry" />
-        </mxCell>
-
-        <!-- Raw Table -->
-        <mxCell id="snowflake-raw-path2" value="Snowflake&#xa;Raw Table&#xa;uploaded_files" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;fontStyle=1" parent="path2-container" vertex="1">
-          <mxGeometry x="420" y="130" width="120" height="70" as="geometry" />
-        </mxCell>
-
-        <!-- Task Processing -->
-        <mxCell id="task-processing" value="Snowflake Task&#xa;File Processing&#xa;Python Stored Proc" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" parent="path2-container" vertex="1">
-          <mxGeometry x="420" y="220" width="120" height="70" as="geometry" />
-        </mxCell>
-
-        <!-- Arrows PATH 2 -->
-        <mxCell id="arrow-p2-1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#6A1B9A;" parent="path2-container" source="user-browser" target="streamlit-portal" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="label-p2-1" value="HTTPS&#xa;SAML SSO" style="text;html=1;strokeColor=none;fillColor=#fff;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fontStyle=1" parent="path2-container" vertex="1">
-          <mxGeometry x="125" y="50" width="60" height="30" as="geometry" />
-        </mxCell>
-
-        <mxCell id="arrow-p2-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#6A1B9A;" parent="path2-container" source="streamlit-portal" target="file-preview" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <mxCell id="arrow-p2-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#0D47A1;" parent="path2-container" source="file-preview" target="snowpark-write" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <mxCell id="arrow-p2-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#0D47A1;" parent="path2-container" source="snowpark-write" target="snowflake-raw-path2" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <mxCell id="arrow-p2-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#0D47A1;" parent="path2-container" source="snowflake-raw-path2" target="task-processing" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <!-- Alternative path (dashed) -->
-        <mxCell id="arrow-p2-alt" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#666666;dashed=1;" parent="path2-container" source="streamlit-portal" target="snowflake-stage" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="label-p2-alt" value=">100MB files" style="text;html=1;strokeColor=none;fillColor=#fff;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=8;" parent="path2-container" vertex="1">
-          <mxGeometry x="265" y="50" width="70" height="20" as="geometry" />
-        </mxCell>
-
-        <!-- Path 2 Stats -->
-        <mxCell id="path2-stats" value="Latency: 10 sec - 3 min&#xa;Volume: 5-50 GB/month&#xa;Formats: CSV, Excel, JSON" style="text;html=1;strokeColor=#9673a6;fillColor=#e1d5e7;align=left;verticalAlign=top;whiteSpace=wrap;rounded=1;fontSize=10;fontStyle=1" parent="path2-container" vertex="1">
-          <mxGeometry x="20" y="310" width="590" height="50" as="geometry" />
-        </mxCell>
-
-        <!-- Common Snowflake Processing -->
-        <mxCell id="common-container" value="Common Snowflake Processing" style="swimlane;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontStyle=1" parent="1" vertex="1">
-          <mxGeometry x="40" y="480" width="1320" height="160" as="geometry" />
-        </mxCell>
-
-        <!-- Streams -->
-        <mxCell id="streams" value="Streams&#xa;(CDC)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" parent="common-container" vertex="1">
-          <mxGeometry x="40" y="40" width="100" height="60" as="geometry" />
-        </mxCell>
-
-        <!-- Tasks -->
-        <mxCell id="tasks" value="Tasks&#xa;(ETL Orchestration)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" parent="common-container" vertex="1">
-          <mxGeometry x="160" y="40" width="130" height="60" as="geometry" />
-        </mxCell>
-
-        <!-- Dynamic Tables -->
-        <mxCell id="dynamic-tables" value="Dynamic Tables&#xa;(Real-time Agg)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;fontStyle=1" parent="common-container" vertex="1">
-          <mxGeometry x="310" y="40" width="130" height="60" as="geometry" />
-        </mxCell>
-
-        <!-- Cortex ML -->
-        <mxCell id="cortex-ml" value="Cortex ML&#xa;(Anomaly, Forecast)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" parent="common-container" vertex="1">
-          <mxGeometry x="460" y="40" width="130" height="60" as="geometry" />
-        </mxCell>
-
-        <!-- Streamlit Dashboard -->
-        <mxCell id="streamlit-dash" value="Streamlit&#xa;Dashboards" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6d0de;strokeColor=#996185;fontStyle=1" parent="common-container" vertex="1">
-          <mxGeometry x="970" y="40" width="120" height="60" as="geometry" />
-        </mxCell>
-
-        <!-- Power BI -->
-        <mxCell id="powerbi" value="Power BI&#xa;Analytics" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6d0de;strokeColor=#996185;fontStyle=1" parent="common-container" vertex="1">
-          <mxGeometry x="1110" y="40" width="120" height="60" as="geometry" />
-        </mxCell>
-
-        <!-- Arrows Common -->
-        <mxCell id="arrow-c1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#0D47A1;" parent="common-container" source="streams" target="tasks" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <mxCell id="arrow-c2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#0D47A1;" parent="common-container" source="tasks" target="dynamic-tables" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <mxCell id="arrow-c3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#0D47A1;" parent="common-container" source="dynamic-tables" target="cortex-ml" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-
-        <mxCell id="arrow-c4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#6A1B9A;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="common-container" source="cortex-ml" target="streamlit-dash" edge="1">
+        <mxCell id="arrow-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#D84315;" parent="path-container" source="ug65-gateway" target="iot-core" edge="1">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="680" y="70" />
-              <mxPoint x="680" y="70" />
+              <mxPoint x="180" y="75" />
+              <mxPoint x="250" y="75" />
             </Array>
           </mxGeometry>
         </mxCell>
+        <mxCell id="label-2" value="MQTT (TLS 1.3)" style="text;html=1;strokeColor=none;fillColor=#fff;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fontStyle=1" parent="path-container" vertex="1">
+          <mxGeometry x="215" y="55" width="60" height="20" as="geometry" />
+        </mxCell>
 
-        <mxCell id="arrow-c5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#6A1B9A;" parent="common-container" source="cortex-ml" target="powerbi" edge="1">
+        <mxCell id="arrow-2b" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#7CB342;" parent="path-container" source="devtank" target="iot-core" edge="1">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="680" y="70" />
-              <mxPoint x="680" y="70" />
+              <mxPoint x="180" y="165" />
+              <mxPoint x="305" y="165" />
+              <mxPoint x="305" y="75" />
             </Array>
           </mxGeometry>
         </mxCell>
-
-        <!-- Arrows from PATH 1 to Common -->
-        <mxCell id="arrow-path1-common" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#0D47A1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="snowflake-raw-path1" target="streams" edge="1">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="620" y="470" />
-              <mxPoint x="130" y="470" />
-            </Array>
-          </mxGeometry>
+        <mxCell id="label-2b" value="Wi-Fi MQTT" style="text;html=1;strokeColor=none;fillColor=#fff;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fontStyle=1" parent="path-container" vertex="1">
+          <mxGeometry x="220" y="120" width="60" height="20" as="geometry" />
         </mxCell>
 
-        <!-- Arrows from PATH 2 to Common -->
-        <mxCell id="arrow-path2-common" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#0D47A1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="1" source="task-processing" target="streams" edge="1">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="1180" y="470" />
-              <mxPoint x="130" y="470" />
-            </Array>
-          </mxGeometry>
+        <mxCell id="arrow-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#D84315;" parent="path-container" source="iot-core" target="iot-rules" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arrow-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#D84315;" parent="path-container" source="iot-rules" target="kinesis" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arrow-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=4;strokeColor=#0D47A1;" parent="path-container" source="kinesis" target="openflow" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="label-5" value="Native Connector" style="text;html=1;strokeColor=none;fillColor=#d5e8d4;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fontStyle=1" parent="path-container" vertex="1">
+          <mxGeometry x="625" y="50" width="70" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arrow-6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#0D47A1;" parent="path-container" source="openflow" target="snowflake-raw" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arrow-7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#0D47A1;" parent="path-container" source="snowflake-raw" target="snowflake-proc" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="arrow-8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#6A1B9A;" parent="path-container" source="snowflake-proc" target="analytics" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Path Stats -->
+        <mxCell id="path-stats" value="End-to-End Latency: 5-15 seconds | Volume: 26M+ messages/day | Authentication: X.509 certificates | Partitioning: By tenant_id" style="text;html=1;strokeColor=#82b366;fillColor=#d5e8d4;align=left;verticalAlign=top;whiteSpace=wrap;rounded=1;fontSize=10;fontStyle=1" parent="path-container" vertex="1">
+          <mxGeometry x="20" y="230" width="1280" height="40" as="geometry" />
         </mxCell>
 
         <!-- Legend -->
         <mxCell id="legend" value="Legend" style="swimlane;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;fontStyle=1" parent="1" vertex="1">
-          <mxGeometry x="40" y="660" width="450" height="100" as="geometry" />
+          <mxGeometry x="40" y="380" width="550" height="100" as="geometry" />
         </mxCell>
 
-        <mxCell id="legend-path1" value="PATH 1: Real-time sensor data flow" style="text;html=1;strokeColor=#D84315;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;strokeWidth=3;" parent="legend" vertex="1">
-          <mxGeometry x="10" y="30" width="220" height="20" as="geometry" />
+        <mxCell id="legend-edge" value="Data Flow" style="text;html=1;strokeColor=#D84315;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;strokeWidth=3;" parent="legend" vertex="1">
+          <mxGeometry x="10" y="30" width="150" height="20" as="geometry" />
         </mxCell>
 
-        <mxCell id="legend-path2" value="PATH 2: Batch file upload flow" style="text;html=1;strokeColor=#6A1B9A;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;strokeWidth=3;" parent="legend" vertex="1">
-          <mxGeometry x="10" y="50" width="220" height="20" as="geometry" />
+        <mxCell id="legend-aws" value="AWS Services" style="text;html=1;strokeColor=#b85450;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;strokeWidth=3;" parent="legend" vertex="1">
+          <mxGeometry x="10" y="50" width="150" height="20" as="geometry" />
         </mxCell>
 
-        <mxCell id="legend-snowflake" value="Snowflake internal processing" style="text;html=1;strokeColor=#0D47A1;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;strokeWidth=3;" parent="legend" vertex="1">
-          <mxGeometry x="10" y="70" width="220" height="20" as="geometry" />
+        <mxCell id="legend-snowflake" value="Snowflake Integration" style="text;html=1;strokeColor=#10739e;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;strokeWidth=3;" parent="legend" vertex="1">
+          <mxGeometry x="10" y="70" width="200" height="20" as="geometry" />
         </mxCell>
 
         <!-- Key Benefits -->
         <mxCell id="benefits" value="Key Architecture Benefits" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1" parent="1" vertex="1">
-          <mxGeometry x="510" y="660" width="850" height="100" as="geometry" />
+          <mxGeometry x="610" y="380" width="750" height="100" as="geometry" />
         </mxCell>
 
-        <mxCell id="benefit1" value="✓ No Lambda for sensor data: Snowflake Openflow handles ingestion natively" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="benefits" vertex="1">
-          <mxGeometry x="10" y="25" width="830" height="15" as="geometry" />
+        <mxCell id="benefit1" value="✓ Single protocol: All sensors use MQTT (native, no conversion needed)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="benefits" vertex="1">
+          <mxGeometry x="10" y="20" width="730" height="15" as="geometry" />
         </mxCell>
 
-        <mxCell id="benefit2" value="✓ Dual-purpose Streamlit: Web portal AND batch file ingestion in single platform" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="benefits" vertex="1">
-          <mxGeometry x="10" y="42" width="830" height="15" as="geometry" />
+        <mxCell id="benefit2" value="✓ Dual connectivity: DevTank can use Wi-Fi MQTT OR LoRaWAN gateway, gateways bridge all sensor types" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="benefits" vertex="1">
+          <mxGeometry x="10" y="38" width="730" height="15" as="geometry" />
         </mxCell>
 
-        <mxCell id="benefit3" value="✓ Native integrations: IoT Core (AWS) + Kinesis (AWS) + Openflow (Snowflake) - all managed services" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="benefits" vertex="1">
-          <mxGeometry x="10" y="59" width="830" height="15" as="geometry" />
+        <mxCell id="benefit3" value="✓ Managed services end-to-end: IoT Core, Kinesis, Openflow (no Lambda, no custom validation code)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="benefits" vertex="1">
+          <mxGeometry x="10" y="56" width="730" height="15" as="geometry" />
         </mxCell>
 
-        <mxCell id="benefit4" value="✓ Unified platform: Streamlit for UI, file uploads, dashboards; Snowflake for data, processing, ML" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="benefits" vertex="1">
-          <mxGeometry x="10" y="76" width="830" height="15" as="geometry" />
+        <mxCell id="benefit4" value="✓ Multi-tenancy: Topic ACLs at IoT Core, partition keys in Kinesis, database-per-tenant in Snowflake" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="benefits" vertex="1">
+          <mxGeometry x="10" y="74" width="730" height="15" as="geometry" />
         </mxCell>
-
       </root>
     </mxGraphModel>
   </diagram>
