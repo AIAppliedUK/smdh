@@ -1,0 +1,50 @@
+@startuml SMDH_Authentication
+!theme plain
+skinparam BackgroundColor white
+
+title SMDH Two-Tier Authentication Architecture
+
+participant "Gateway" as gw
+participant "API Gateway" as apigw
+participant "Lambda" as lambda
+database "DynamoDB" as dynamo
+database "Secrets\nManager" as secrets
+participant "Snowflake" as sf
+
+gw -> apigw : POST /ingest\nHeader: x-api-key: xyz123
+note right : **Tier 1 Authentication**\nStatic API key\nConfigured at gateway setup
+
+apigw -> apigw : Validate API key\nin usage plan
+apigw -> lambda : Invoke function\n(API key ID in context)
+
+lambda -> dynamo : Query:\napi_key → tenant_id
+dynamo -> lambda : tenant_id: company_a
+
+lambda -> lambda : Validate:\npayload.tenant_id\n== company_a?
+
+alt Tenant Mismatch
+    lambda -> apigw : 403 Forbidden
+    apigw -> gw : 403 Forbidden
+else Tenant Match
+    lambda -> secrets : Retrieve\nSnowflake private key
+    secrets -> lambda : RSA-2048 key\n(cached in memory)
+    
+    lambda -> lambda : Generate JWT:\n- Issuer: ACCOUNT.user\n- Expiry: now + 3600s\n- Sign with RSA-SHA256
+    
+    lambda -> sf : POST /v2/streaming/...\nAuthorization: Bearer {JWT}
+    note right : **Tier 2 Authentication**\nShort-lived JWT\nGenerated per request
+    
+    sf -> sf : Verify JWT signature\nusing public key
+    sf -> lambda : 200 OK
+    lambda -> apigw : 200 OK
+    apigw -> gw : 200 OK
+end
+
+note over gw,sf
+**Security Properties:**
+- API key compromise affects single tenant only
+- JWT tokens short-lived (1 hour) limit exposure
+- Private key never leaves AWS environment
+end note
+
+@enduml

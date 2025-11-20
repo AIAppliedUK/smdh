@@ -1,0 +1,47 @@
+@startuml Snowpipe_Streaming_Auth_Flow
+
+!theme plain
+skinparam defaultFontName Arial
+skinparam ParticipantPadding 20
+skinparam BoxPadding 10
+skinparam SequenceMessageAlign center
+
+title Snowpipe Streaming API: Complete Authentication & Session Flow
+
+actor "Gateway\n(Hypothetical)" as gateway
+participant "Snowflake\nControl Plane" as control
+participant "Snowflake\nIngest Service" as ingest
+database "Snowflake\nTable" as table
+
+== Step 1: JWT Generation (BLOCKED - Gateway Cannot Do This) ==
+gateway -> gateway: Generate JWT claims\n(account, user, iat, exp)
+gateway -> gateway: **Sign with RSA private key**\n**NOT POSSIBLE**
+note right: Gateway lacks\ncryptographic\ncapabilities
+
+== Step 2: Discover Ingest Hostname ==
+gateway -> control: GET /v2/streaming/hostname\nAuthorization: Bearer <JWT>
+control --> gateway: {"hostname": "abc123.eu-west-2.ingest.snowflakecomputing.com"}
+
+== Step 3: Exchange JWT for Scoped Token ==
+gateway -> control: POST /oauth/token\nAuthorization: Bearer <JWT>\ngrant_type=urn:ietf:params:oauth:grant-type:jwt-bearer
+control --> gateway: {"access_token": "<scoped_token>",\n"expires_in": 3600}
+
+== Step 4: Open Streaming Channel ==
+gateway -> ingest: PUT /v2/streaming/.../channels/channel_001\nAuthorization: Bearer <scoped_token>
+ingest --> gateway: {\n"next_continuation_token": "token_abc",\n"last_committed_offset": "0"\n}
+note right: Gateway must store\ncontinuation token\nfor next request\n**NOT POSSIBLE** (stateless)
+
+== Step 5: Stream Data Rows ==
+gateway -> ingest: POST /v2/streaming/.../channels/channel_001/rows\nAuthorization: Bearer <scoped_token>\ncontinuationToken=token_abc\noffsetToken=1
+note left: Must include tokens\nfrom previous response
+ingest --> gateway: {\n"next_continuation_token": "token_def",\n"committed_offset": "1"\n}
+
+== Step 6: Detect Token Expiry (BLOCKED - Gateway Cannot Do This) ==
+gateway -> ingest: POST (with expired token after 60 minutes)
+ingest --> gateway: HTTP 401 Unauthorized
+note right: Gateway cannot detect\n401 status or trigger\ntoken refresh\n**NOT POSSIBLE**
+
+== Step 7: Data Becomes Queryable ==
+ingest -> table: Commit rows to table\n(typically 5-10 seconds)
+
+@enduml
