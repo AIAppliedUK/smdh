@@ -10,7 +10,7 @@ The SMDH platform is a multi-tenant IoT analytics system that collects data from
 
 **The data source determines the ingestion path.**
 
-We don't force all data through a single pipeline. Instead, we provide three optimized paths based on how the data naturally arrives:
+We don't force all data through a single pipeline. Instead, we provide three optimised paths based on how the data naturally arrives:
 
 - **MQTT devices** → AWS IoT Core → Kinesis → Snowflake
 - **HTTP/REST systems** → API Gateway → Lambda → Snowflake
@@ -75,7 +75,7 @@ Acts as the MQTT broker for all IoT devices. Maintains persistent connections wi
 - Handles connection state, reconnection and offline message queuing
 - Offers QoS guarantees for reliable message delivery
 
-**Tracability**
+**Traceability**
 
 - FR-001: Enables MQTT protocol support
 - NFR-001: Auto-scales to handle millions of messages
@@ -88,11 +88,11 @@ Always required when devices communicate via MQTT protocol. This includes most I
 Provides a managed REST API endpoint for HTTP-based data sources. Handles authentication, rate limiting, and request routing to Lambda functions.
 
 - Legacy systems often only support HTTP/webhook integration
-- Provides centralized API management and monitoring
+- Provides centralised API management and monitoring
 - Enforces rate limits to protect backend systems
 - Generates SDK and documentation automatically
 
-**Tracability**
+**Traceability**
 
 - FR-001: Enables HTTP/REST protocol support
 - NFR-002: Managed service with 99.95% SLA
@@ -109,7 +109,7 @@ Buffers and orders streaming data between IoT Core and Snowflake. Provides tempo
 - Maintains message ordering within tenant partitions
 - Enables multiple consumers (future real-time analytics)
 
-**Tracability**
+**Traceability**
 
 - FR-002: Enables real-time processing pipeline
 - NFR-001: Handles high-throughput streaming data
@@ -130,6 +130,8 @@ Serverless compute that handles data validation, transformation, and routing. Di
 - Enforces multi-tenant boundaries (prevents data leakage)
 - Handles authentication complexity (JWT generation for Snowflake)
 - Transforms data into consistent schema
+
+**Traceability**
 
 - FR-004: Tenant validation prevents cross-tenant data access
 - NFR-001: Auto-scales with load
@@ -157,11 +159,11 @@ Central data warehouse handling all storage, processing, and analytics. Provides
 - Scales compute independently of storage
 - Native multi-tenancy support
 
-**Tracability**
+**Traceability**
 
 - FR-003: Long-term storage with Time Travel
 - FR-004: Database-per-tenant isolation
-- NFR-004: Query optimization and result caching
+- NFR-004: Query optimisation and result caching
 
 #### 3.3.2 Streamlit in Snowflake
 
@@ -179,7 +181,7 @@ Native web application framework running inside Snowflake. Provides:
 - Inherits Snowflake security and authentication
 - Rapid development with Python
 
-**Tracability**
+**Traceability**
 
 - FR-005: Self-service file upload capability
 - NFR-003: Inherits Snowflake's security model
@@ -196,7 +198,7 @@ Securely stores and rotates sensitive credentials like Snowflake private keys, A
 - Provides audit trail for credential access
 - Encrypts secrets at rest and in transit
 
-**Tracability**
+**Traceability**
 
 - NFR-003: Secure credential management
 - NFR-005: Automated rotation reduces operational burden
@@ -210,23 +212,23 @@ Stores API key to tenant ID mappings for fast lookup during ingestion.
 - Provides consistent performance
 - Serverless with no maintenance
 
-**Tracability**
+**Traceability**
 
 - FR-004: Enables tenant identification
 - NFR-004: Fast lookups for API performance
 
 #### 3.4.3 CloudWatch
 
-Centralized monitoring and logging for all AWS services. Collects metrics, stores logs, and triggers alarms.
+Centralised monitoring and logging for all AWS services. Collects metrics, stores logs, and triggers alarms.
 
 **Why it's needed:**
 
 - Single pane of glass for system health
 - Automated alerting for issues
-- Performance metrics for optimization
+- Performance metrics for optimisation
 - Audit trail for compliance
 
-**Tracability**
+**Traceability**
 
 - NFR-002: Monitoring for availability targets
 - NFR-003: Audit logging for security
@@ -377,11 +379,11 @@ Centralized monitoring and logging for all AWS services. Collects metrics, store
 
 **User authentication:** SSO via SAML
 
-- Reason: Centralized identity management, MFA support
+- Reason: Centralised identity management, MFA support
 
 ---
 
-## 8. Cost Optimization
+## 8. Cost Optimisation
 
 ### 8.1 Serverless-First Approach
 
@@ -485,7 +487,7 @@ The architecture supports future changes through:
 | ---------------------------- | -------------------- | ------------------------------------- |
 | **Multiple ingestion paths** | Protocol flexibility | Standardize at Snowflake layer        |
 | **Managed services lock-in** | Reduced operations   | Use standard protocols where possible |
-| **Higher Snowflake costs**   | Unified platform     | Optimize with resource monitors       |
+| **Higher Snowflake costs**   | Unified platform     | Optimise with resource monitors       |
 | **Eventual consistency**     | Better performance   | Design UI for eventual consistency    |
 
 ---
