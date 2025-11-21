@@ -1,14 +1,14 @@
 <mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/28.2.8 Chrome/140.0.7339.240 Electron/38.4.0 Safari/537.36" version="28.2.8">
   <diagram name="SMDH IoT Core Architecture" id="iot-core-architecture">
-    <mxGraphModel dx="1186" dy="829" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+    <mxGraphModel dx="2247" dy="995" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="title" value="SMDH IoT Core Architecture&lt;br&gt;MQTT-based ingestion (LoRaWAN gateway &amp; Wi-Fi direct) with Kinesis buffering" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=18;fontStyle=1" parent="1" vertex="1">
+        <mxCell id="title" value="SMDH IoT Core Architecture&lt;br&gt;MQTT-based ingestion&amp;nbsp;" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=18;fontStyle=1" parent="1" vertex="1">
           <mxGeometry x="264" y="10" width="640" height="50" as="geometry" />
         </mxCell>
         <mxCell id="edge-layer" value="Edge Devices Layer" style="swimlane;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontStyle=1;startSize=40;" parent="1" vertex="1">
-          <mxGeometry x="40" y="80" width="200" height="600" as="geometry" />
+          <mxGeometry x="40" y="80" width="200" height="610" as="geometry" />
         </mxCell>
         <mxCell id="machine-sensors" value="Machine Sensors&#xa;(LoRaWAN)&#xa;1 Hz, 30-45 sensors" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="edge-layer" vertex="1">
           <mxGeometry x="20" y="60" width="160" height="60" as="geometry" />
@@ -26,34 +26,40 @@
           <mxGeometry x="20" y="390" width="160" height="60" as="geometry" />
         </mxCell>
         <mxCell id="devtank-osm" value="DevTank OSM&#xa;(Multi-sensor)&#xa;Air Quality, Energy" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#558b2f;fontStyle=1" parent="edge-layer" vertex="1">
-          <mxGeometry x="20" y="480" width="160" height="70" as="geometry" />
+          <mxGeometry x="20" y="460" width="160" height="70" as="geometry" />
         </mxCell>
         <mxCell id="devtank-note" value="✓ Wi-Fi MQTT option&#xa;✓ LoRaWAN option&#xa;✓ X.509 certificates&#xa;✓ Binary payload format" style="text;html=1;strokeColor=none;fillColor=#c8e6c9;align=left;verticalAlign=top;whiteSpace=wrap;rounded=1;fontSize=9;" parent="edge-layer" vertex="1">
-          <mxGeometry x="20" y="560" width="160" height="60" as="geometry" />
+          <mxGeometry x="20" y="540" width="160" height="60" as="geometry" />
         </mxCell>
         <mxCell id="aws-layer" value="AWS Infrastructure&amp;nbsp;" style="swimlane;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontStyle=1;startSize=40;" parent="1" vertex="1">
-          <mxGeometry x="280" y="80" width="240" height="600" as="geometry" />
+          <mxGeometry x="280" y="80" width="240" height="610" as="geometry" />
         </mxCell>
         <mxCell id="iot-core" value="AWS IoT Core&#xa;MQTT Broker&#xa;TLS 1.3 Auth" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1" parent="aws-layer" vertex="1">
           <mxGeometry x="30" y="60" width="180" height="70" as="geometry" />
         </mxCell>
         <mxCell id="iot-features" value="✓ Device registry&#xa;✓ QoS 1/2 support&#xa;✓ Message persistence&#xa;✓ Per-topic ACLs" style="text;html=1;strokeColor=none;fillColor=#ffe6cc;align=left;verticalAlign=top;whiteSpace=wrap;rounded=1;fontSize=10;" parent="aws-layer" vertex="1">
-          <mxGeometry x="30" y="140" width="180" height="50" as="geometry" />
+          <mxGeometry x="30" y="140" width="180" height="60" as="geometry" />
         </mxCell>
         <mxCell id="iot-rules" value="IoT Rules Engine&#xa;Topic SQL&#xa;Tenant Routing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1" parent="aws-layer" vertex="1">
           <mxGeometry x="30" y="220" width="180" height="70" as="geometry" />
         </mxCell>
         <mxCell id="iot-rules-features" value="✓ Topic-based routing&#xa;✓ Tenant partitioning&#xa;✓ Error republish&#xa;✓ Message filtering" style="text;html=1;strokeColor=none;fillColor=#ffe6cc;align=left;verticalAlign=top;whiteSpace=wrap;rounded=1;fontSize=10;" parent="aws-layer" vertex="1">
-          <mxGeometry x="30" y="300" width="180" height="50" as="geometry" />
+          <mxGeometry x="30" y="300" width="180" height="60" as="geometry" />
         </mxCell>
         <mxCell id="kinesis" value="AWS Kinesis&#xa;Data Streams&#xa;On-Demand Capacity" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1" parent="aws-layer" vertex="1">
           <mxGeometry x="30" y="380" width="180" height="70" as="geometry" />
         </mxCell>
         <mxCell id="kinesis-features" value="✓ 24h retention&#xa;✓ Tenant partitioning&#xa;✓ Buffering &amp; ordering&#xa;✓ Auto-scaling" style="text;html=1;strokeColor=none;fillColor=#ffe6cc;align=left;verticalAlign=top;whiteSpace=wrap;rounded=1;fontSize=10;" parent="aws-layer" vertex="1">
-          <mxGeometry x="30" y="460" width="180" height="50" as="geometry" />
+          <mxGeometry x="30" y="460" width="180" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="snowflake-layer" value="Snowflake Data Platform (All Processing)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontStyle=1;startSize=40;" parent="1" vertex="1">
-          <mxGeometry x="560" y="80" width="280" height="600" as="geometry" />
+        <mxCell id="arrow6-label" value="PutRecord&#xa;Partition Key: {tenant_id}" style="text;html=1;strokeColor=none;fillColor=#fff;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;arcSize=0;" parent="aws-layer" vertex="1">
+          <mxGeometry x="130" y="304" width="80" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow4-label" value="MQTT Publish (TLS 1.3)&#xa;topic: smdh/{tenant_id}/sensor-data" style="text;html=1;strokeColor=none;fillColor=#fff;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=10;fontStyle=1" parent="aws-layer" vertex="1">
+          <mxGeometry x="-60" y="190" width="100" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="snowflake-layer" value="Snowflake Data Platform" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontStyle=1;startSize=40;" parent="1" vertex="1">
+          <mxGeometry x="560" y="80" width="280" height="610" as="geometry" />
         </mxCell>
         <mxCell id="openflow" value="Snowflake Openflow&#xa;Kinesis Connector&#xa;&lt;10 second latency" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;fontStyle=1" parent="snowflake-layer" vertex="1">
           <mxGeometry x="20" y="50" width="240" height="60" as="geometry" />
@@ -77,7 +83,7 @@
           <mxGeometry x="20" y="530" width="240" height="60" as="geometry" />
         </mxCell>
         <mxCell id="analytics-layer" value="Analytics &amp; Portal Layer" style="swimlane;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontStyle=1;startSize=40;" parent="1" vertex="1">
-          <mxGeometry x="880" y="80" width="250" height="600" as="geometry" />
+          <mxGeometry x="880" y="80" width="250" height="610" as="geometry" />
         </mxCell>
         <mxCell id="streamlit" value="Snowflake Streamlit&#xa;Native Portal&#xa;File Upload + Dashboards" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6d0de;strokeColor=#996185;fontStyle=1" parent="analytics-layer" vertex="1">
           <mxGeometry x="20" y="60" width="210" height="80" as="geometry" />
@@ -126,14 +132,11 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="arrow4-label" value="MQTT Publish (TLS 1.3)&#xa;topic: smdh/{tenant_id}/sensor-data" style="text;html=1;strokeColor=none;fillColor=#fff;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=10;fontStyle=1" parent="1" vertex="1">
-          <mxGeometry x="220" y="260" width="100" height="40" as="geometry" />
-        </mxCell>
         <mxCell id="arrow4b" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#7CB342;entryX=0;entryY=0.8;entryDx=0;entryDy=0;" parent="1" source="devtank-osm" target="iot-core" edge="1">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="270" y="560" />
-              <mxPoint x="270" y="220" />
+              <mxPoint x="270" y="196" />
             </Array>
           </mxGeometry>
         </mxCell>
@@ -141,13 +144,20 @@
           <mxGeometry x="200" y="370" width="90" height="40" as="geometry" />
         </mxCell>
         <mxCell id="arrow5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#D84315;" parent="1" source="iot-core" target="iot-rules" edge="1">
-          <mxGeometry relative="1" as="geometry" />
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="420" y="260" />
+              <mxPoint x="420" y="260" />
+            </Array>
+          </mxGeometry>
         </mxCell>
         <mxCell id="arrow6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#D84315;" parent="1" source="iot-rules" target="kinesis" edge="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="arrow6-label" value="PutRecord&#xa;Partition Key: {tenant_id}" style="text;html=1;strokeColor=none;fillColor=#fff;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;" parent="1" vertex="1">
-          <mxGeometry x="340" y="380" width="80" height="30" as="geometry" />
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="420" y="410" />
+              <mxPoint x="420" y="410" />
+            </Array>
+          </mxGeometry>
         </mxCell>
         <mxCell id="arrow8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=4;strokeColor=#0D47A1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="kinesis" target="openflow" edge="1">
           <mxGeometry relative="1" as="geometry">
@@ -158,7 +168,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="arrow8-label" value="Native Kinesis&#xa;Integration&#xa;Auto-buffering" style="text;html=1;strokeColor=none;fillColor=#d5e8d4;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=10;fontStyle=1" parent="1" vertex="1">
-          <mxGeometry x="520" y="220" width="90" height="40" as="geometry" />
+          <mxGeometry x="495" y="190" width="90" height="40" as="geometry" />
         </mxCell>
         <mxCell id="arrow9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#0D47A1;" parent="1" source="openflow" target="database-per-tenant" edge="1">
           <mxGeometry relative="1" as="geometry" />
@@ -212,19 +222,19 @@
           <mxGeometry x="10" y="70" width="230" height="20" as="geometry" />
         </mxCell>
         <mxCell id="benefits" value="Key Architecture Benefits" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1" parent="1" vertex="1">
-          <mxGeometry x="560" y="700" width="570" height="100" as="geometry" />
+          <mxGeometry x="560" y="700" width="570" height="110" as="geometry" />
         </mxCell>
         <mxCell id="benefit1" value="✓ Dual connectivity: DevTank can use LoRaWAN gateway OR Wi-Fi MQTT direct to IoT Core" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="benefits" vertex="1">
-          <mxGeometry x="10" y="20" width="550" height="15" as="geometry" />
+          <mxGeometry x="10" y="30" width="550" height="15" as="geometry" />
         </mxCell>
         <mxCell id="benefit2" value="✓ Buffering &amp; Ordering: Kinesis ensures message ordering and QoS guarantees per tenant" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="benefits" vertex="1">
-          <mxGeometry x="10" y="38" width="550" height="15" as="geometry" />
+          <mxGeometry x="10" y="48" width="550" height="15" as="geometry" />
         </mxCell>
         <mxCell id="benefit3" value="✓ No custom validation: IoT Rules engine handles routing; Openflow manages ingestion" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="benefits" vertex="1">
-          <mxGeometry x="10" y="56" width="550" height="15" as="geometry" />
+          <mxGeometry x="10" y="66" width="550" height="15" as="geometry" />
         </mxCell>
         <mxCell id="benefit4" value="✓ Unified identity: Snowflake IAM replaces separate gateway authentication (X.509 managed by AWS)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=10;" parent="benefits" vertex="1">
-          <mxGeometry x="10" y="74" width="550" height="15" as="geometry" />
+          <mxGeometry x="10" y="84" width="550" height="15" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

@@ -70,7 +70,7 @@
         <mxCell id="dynamo-table" value="API Key Table:&lt;br&gt;┌────────┬──────────┐&lt;br&gt;│ api_key│ tenant_id│&lt;br&gt;├────────┼──────────┤&lt;br&gt;│ abc123  │ tenant_a │&lt;br&gt;│ def456  │ tenant_b │&lt;br&gt;└────────┴──────────┘" style="text;html=1;strokeColor=#6c8ebf;fillColor=#dae8fc;align=left;verticalAlign=top;whiteSpace=wrap;rounded=1;fontSize=9;fontFamily=Courier New;spacingLeft=11;" parent="aws-layer" vertex="1">
           <mxGeometry x="1030" y="63.75" width="150" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="ymj8n9Aspf6wu5fG74ye-1" value="API Key Mapping:&#xa;key-abc123 → tenant_a&#xa;key-def456 → tenant_b&#xa;key-ghi789 → tenant_c&#xa;&#xa;Rate limits per tenant" style="text;html=1;strokeColor=#6c8ebf;fillColor=#dae8fc;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;" vertex="1" parent="aws-layer">
+        <mxCell id="ymj8n9Aspf6wu5fG74ye-1" value="API Key Mapping:&#xa;key-abc123 → tenant_a&#xa;key-def456 → tenant_b&#xa;key-ghi789 → tenant_c&#xa;&#xa;Rate limits per tenant" style="text;html=1;strokeColor=#6c8ebf;fillColor=#dae8fc;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;" parent="aws-layer" vertex="1">
           <mxGeometry x="290" y="67.5" width="180" height="72.5" as="geometry" />
         </mxCell>
         <mxCell id="iot-policies" value="IoT Policies (Per-Tenant):&#xa;✓ Connect: client/tenant-a-*&#xa;✓ Publish: smdh/tenant_a/*&#xa;✓ Subscribe: commands/tenant_a/*&#xa;&#xa;❌ Cross-tenant denied" style="text;html=1;strokeColor=#6c8ebf;fillColor=#dae8fc;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;" parent="aws-layer" vertex="1">

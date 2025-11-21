@@ -603,7 +603,7 @@ Navigate to: **System → General Settings**
 
 | Setting | Value | Notes |
 |---------|-------|-------|
-| **Device Name** | `smdh-gw-${TENANT_ID}-${SITE_ID}` | E.g., `smdh-gw-company_a-site_001` |
+| **Device Name** | `smdh-gateway-${TENANT_ID}-${SITE_ID}-gw_001` | E.g., `smdh-gateway-company_a-site_001-gw_001` |
 | **Description** | Installation location | E.g., "Factory A - North Building Roof" |
 | **Time Zone** | `Europe/London` | Match site location |
 | **NTP Server** | `pool.ntp.org` | Critical for LoRaWAN timing |
@@ -631,7 +631,7 @@ Navigate to: **Network → WAN**
 | Setting | Value |
 |---------|-------|
 | **Protocol** | DHCP Client |
-| **Hostname** | `smdh-gw-${TENANT_ID}-${SITE_ID}` |
+| **Hostname** | `smdh-gateway-${TENANT_ID}-${SITE_ID}-gw_001` |
 
 Click **Save & Apply**
 
@@ -741,7 +741,7 @@ The gateway must be connected to a LoRaWAN Network Server to manage device joins
 2. **Add Gateway:**
    - Navigate to **Gateways** → **Add Gateway**
    - **Gateway EUI:** Enter gateway's EUI (from gateway label or web UI)
-   - **Gateway ID:** `smdh-gw-${TENANT_ID}-${SITE_ID}` (lowercase, no spaces)
+   - **Gateway ID:** `smdh-gateway-${TENANT_ID}-${SITE_ID}-gw_001` (lowercase, no spaces)
    - **Gateway name:** `SMDH Gateway - ${SITE_ID}`
    - **Frequency plan:** Europe 863-870 MHz (SF9 for RX2 - recommended)
    - Click **Create Gateway**
@@ -798,7 +798,7 @@ In TTN Console:
 
 2. **Add Gateway:**
    - Navigate to **Gateways** → **Create**
-   - **Gateway name:** `smdh-gw-${TENANT_ID}-${SITE_ID}`
+   - **Gateway name:** `smdh-gateway-${TENANT_ID}-${SITE_ID}-gw_001`
    - **Gateway description:** Installation location
    - **Gateway ID:** Gateway EUI (format: `24e124fffef12345`)
    - **Network-server:** Select appropriate server
@@ -839,7 +839,7 @@ AWS IoT Core provides native LoRaWAN network server capabilities.
 ```bash
 # Set variables
 export GATEWAY_EUI="24e124fffef12345"  # From gateway label
-export GATEWAY_NAME="smdh-gw-company_a-site_001"
+export GATEWAY_NAME="smdh-gateway-company_a-site_001-gw_001"
 export AWS_REGION="eu-west-2"
 
 # Create gateway
@@ -891,7 +891,9 @@ Gateway → AWS IoT Core → Kinesis → Snowflake
 #### 8.2.1 Create IoT Thing for Gateway
 
 ```bash
-export GATEWAY_ID="smdh-gw-company_a-site_001"
+export TENANT_ID="company_a"
+export SITE_ID="site_001"
+export GATEWAY_ID="smdh-gateway-${TENANT_ID}-${SITE_ID}-gw_001"
 export AWS_REGION="eu-west-2"
 
 # Create Thing
@@ -900,9 +902,10 @@ aws iot create-thing \
   --thing-type-name "LoRaWANGateway" \
   --attribute-payload '{
     "attributes": {
-      "tenant_id": "company_a",
-      "site_id": "site_001",
-      "gateway_type": "Milesight_UG65"
+      "tenant_id": "'${TENANT_ID}'",
+      "site_id": "'${SITE_ID}'",
+      "gateway_type": "Milesight_UG65",
+      "device_type": "gateway"
     }
   }' \
   --region ${AWS_REGION}
@@ -1045,7 +1048,7 @@ Navigate to: **System → Time**
 Create coverage documentation:
 
 ```
-Coverage Test Report - Gateway: smdh-gw-company_a-site_001
+Coverage Test Report - Gateway: smdh-gateway-company_a-site_001-gw_001
 Date: 2025-11-20
 Tester: [Name]
 
@@ -1121,7 +1124,7 @@ Use online tools to visualize:
        payload,
        gateway_id
    FROM smdh_tenant_company_a.raw.sensor_readings
-   WHERE gateway_id = 'smdh-gw-company_a-site_001'
+   WHERE gateway_id = 'smdh-gateway-company_a-site_001-gw_001'
    ORDER BY timestamp DESC
    LIMIT 5;
    ```
@@ -1388,7 +1391,7 @@ Use this checklist for each gateway deployment:
 ### Network Configuration
 - [ ] Web UI accessible at: http://______________
 - [ ] Default password changed
-- [ ] Device name set: smdh-gw-${TENANT_ID}-${SITE_ID}
+- [ ] Device name set: smdh-gateway-${TENANT_ID}-${SITE_ID}-gw_001
 - [ ] Static IP configured (if required)
 - [ ] DNS servers configured
 - [ ] NTP synchronization enabled and working

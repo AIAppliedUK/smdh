@@ -553,7 +553,7 @@ Please verify:
 2. Status changes to "Connected"
 3. Test measurements return values
 
-Data should appear in Snowflake within 5-15 minutes of first transmission.
+Data should appear in Snowflake within 10-20 seconds of first transmission (LoRaWAN path) or 6-12 seconds (Wi-Fi MQTT path).
 
 Confirm successful data flow so we can complete handover.
 ```
@@ -611,7 +611,7 @@ If using a Wi-Fi enabled OSM device:
 2. Configure MQTT settings:
    | Field | Value |
    |-------|-------|
-   | **MQTT Address** | `${IOT_ENDPOINT}.iot.eu-west-2.amazonaws.com` |
+   | **MQTT Address** | `${IOT_ENDPOINT}` |
    | **MQTT User** | (leave blank for certificate auth) |
    | **MQTT Password** | (leave blank for certificate auth) |
    | **MQTT Port** | `8883` |
@@ -756,25 +756,25 @@ cat > iot-policy-${TENANT_ID}.json << 'EOF'
     {
       "Effect": "Allow",
       "Action": "iot:Connect",
-      "Resource": "arn:aws:iot:eu-west-2:${ACCOUNT_ID}:client/smdh-osm-${TENANT_ID}-*"
+      "Resource": "arn:aws:iot:eu-west-2:${AWS_ACCOUNT_ID}:client/smdh-*-${TENANT_ID}-*"
     },
     {
       "Effect": "Allow",
       "Action": "iot:Publish",
       "Resource": [
-        "arn:aws:iot:eu-west-2:${ACCOUNT_ID}:topic/smdh/${TENANT_ID}/sensor-data",
-        "arn:aws:iot:eu-west-2:${ACCOUNT_ID}:topic/smdh/${TENANT_ID}/device-status"
+        "arn:aws:iot:eu-west-2:${AWS_ACCOUNT_ID}:topic/smdh/${TENANT_ID}/*/sensor-data",
+        "arn:aws:iot:eu-west-2:${AWS_ACCOUNT_ID}:topic/smdh/${TENANT_ID}/*/device-status"
       ]
     },
     {
       "Effect": "Allow",
       "Action": "iot:Subscribe",
-      "Resource": "arn:aws:iot:eu-west-2:${ACCOUNT_ID}:topicfilter/smdh/${TENANT_ID}/commands/#"
+      "Resource": "arn:aws:iot:eu-west-2:${AWS_ACCOUNT_ID}:topicfilter/smdh/${TENANT_ID}/commands/*"
     },
     {
       "Effect": "Allow",
       "Action": "iot:Receive",
-      "Resource": "arn:aws:iot:eu-west-2:${ACCOUNT_ID}:topic/smdh/${TENANT_ID}/commands/*"
+      "Resource": "arn:aws:iot:eu-west-2:${AWS_ACCOUNT_ID}:topic/smdh/${TENANT_ID}/commands/*"
     }
   ]
 }
@@ -840,19 +840,19 @@ aws iam attach-role-policy \
 aws iot create-topic-rule \
   --rule-name smdh_devtank_to_kinesis \
   --topic-rule-payload '{
-    "sql": "SELECT topic(2) as tenant_id, timestamp() as iot_timestamp, clientId() as device_id, * FROM '\''smdh/+/sensor-data'\''",
+    "sql": "SELECT *, topic(2) as tenant_id, topic(3) as site_id, timestamp() as iot_timestamp, clientId() as device_id FROM '\''smdh/+/+/sensor-data'\''",
     "description": "Route DevTank sensor data to Kinesis",
     "actions": [{
       "kinesis": {
-        "roleArn": "arn:aws:iam::'${ACCOUNT_ID}':role/smdh-iot-kinesis-role",
+        "roleArn": "arn:aws:iam::'${AWS_ACCOUNT_ID}':role/smdh-iot-kinesis-role",
         "streamName": "smdh-sensor-data-stream",
         "partitionKey": "${tenant_id}"
       }
     }],
     "errorAction": {
       "republish": {
-        "roleArn": "arn:aws:iam::'${ACCOUNT_ID}':role/smdh-iot-kinesis-role",
-        "topic": "smdh/errors/devtank",
+        "roleArn": "arn:aws:iam::'${AWS_ACCOUNT_ID}':role/smdh-iot-kinesis-role",
+        "topic": "smdh/errors/${tenant_id}",
         "qos": 1
       }
     },
@@ -1283,11 +1283,17 @@ Use this checklist for each new DevTank device:
 ### MQTT Topic Structure
 
 ```
-smdh/{tenant_id}/sensor-data     # Sensor readings
-smdh/{tenant_id}/device-status   # Device health/status
-smdh/{tenant_id}/commands/#      # Commands to device (subscribe)
-smdh/errors/devtank              # Error messages
+smdh/{tenant_id}/{site_id}/sensor-data       # Sensor readings (publish)
+smdh/{tenant_id}/{site_id}/device-status     # Device health/diagnostics (publish)
+smdh/{tenant_id}/commands/{device_id}        # Downlink commands (subscribe)
+smdh/errors/{tenant_id}                      # Error republish topic
 ```
+
+**Topic Levels:**
+- Level 1: `smdh` (namespace)
+- Level 2: `{tenant_id}` (e.g., company_a)
+- Level 3: `{site_id}` (e.g., site_001) or `commands`/`errors`
+- Level 4: topic type or device identifier
 
 ### Measurement Codes
 

@@ -77,17 +77,13 @@ Acts as the MQTT broker for all IoT devices. Maintains persistent connections wi
 - MQTT v3.1.1 and v5.0 protocol support
 - Device registry for managing X.509 certificates and metadata
 - Connection state management, reconnection, and offline message queuing
-- QoS 0, 1, and 2 guarantees for reliable message delivery
+- QoS 0 and 1 support for reliable message delivery (SMDH uses QoS 1 for at-least-once guarantee)
 - Topic-based access control (ACLs) per tenant
 - Built-in monitoring via CloudWatch metrics
 
 **Why it's needed:**
 
-- All sensor data arrives via MQTT (Milesight UG65 gateways, DevTank OSM devices)
-- Provides central authentication point for distributed edge devices
-- Manages certificate lifecycle without application involvement
-- Offers persistent connections suited for high-frequency sensors (1 Hz+)
-- Native integration with Kinesis via IoT Rules Engine
+All sensor data arrives via MQTT through Milesight UG65 gateways and DevTank OSM devices, so AWS IoT Core provides the central authentication point for distributed edge devices, manages certificate lifecycles without custom application logic, keeps persistent connections for high-frequency sensors (1 Hz+), and integrates natively with Kinesis through the IoT Rules Engine.
 
 **Traceability**
 
@@ -101,9 +97,10 @@ Acts as the MQTT broker for all IoT devices. Maintains persistent connections wi
 Buffers and orders streaming data between IoT Core and Snowflake. Provides temporary storage for high-velocity data streams with guaranteed ordering per partition.
 
 - IoT Core generates data faster than Snowflake can ingest individual messages
-- Provides replay capability if downstream processing fails
+- Provides replay capability if downstream processing fails with 24-hour retention window
 - Maintains message ordering within tenant partitions
 - Enables multiple consumers (future real-time analytics)
+- On-demand capacity mode auto-scales with message volume
 
 **Traceability**
 

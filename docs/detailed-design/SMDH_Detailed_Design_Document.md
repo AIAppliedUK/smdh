@@ -1187,27 +1187,6 @@ This ingestion path handles **HTTP-based data sources** that cannot use MQTT but
 
 ### 3.7 Selecting the Right Ingestion Method
 
-**Decision Tree for Ingestion Method Selection:**
-
-1. **What protocol does your data source support?**
-
-   - MQTT only → Must use IoT Core + Kinesis path
-   - HTTP/REST → Can use API Gateway + Lambda path
-   - File-based → Use Streamlit upload interface
-
-2. **What is your data frequency?**
-
-   - Continuous streaming (>1 Hz) → MQTT path with Kinesis buffering
-   - Event-driven → HTTP path with API Gateway
-   - Batch/scheduled → File upload via Streamlit
-
-3. **What are your security requirements?**
-   - Device certificates → IoT Core (X.509)
-   - API key management → API Gateway
-   - User authentication → Streamlit (SSO)
-
-**Important Considerations:**
-
 - Some gateways (like Milesight UG65) support both MQTT and HTTP - choose based on your requirements
 - MQTT provides persistent connections and QoS guarantees
 - HTTP is simpler but requires more overhead for high-frequency data
