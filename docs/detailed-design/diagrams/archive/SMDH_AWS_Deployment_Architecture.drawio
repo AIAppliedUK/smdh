@@ -1,6 +1,6 @@
 <mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/28.2.8 Chrome/140.0.7339.240 Electron/38.4.0 Safari/537.36" version="28.2.8">
   <diagram name="AWS Deployment Architecture" id="aws-deployment">
-    <mxGraphModel dx="1425" dy="829" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="1">
+    <mxGraphModel dx="1248" dy="873" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1200" math="0" shadow="1">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -202,7 +202,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="network-box" value="AWS → Snowflake Network Requirements" style="swimlane;whiteSpace=wrap;html=1;fillColor=#FFF9C4;strokeColor=#F57C00;fontSize=14;fontStyle=1" parent="1" vertex="1">
-          <mxGeometry x="80" y="1020" width="1480" height="140" as="geometry" />
+          <mxGeometry x="80" y="1020" width="1480" height="160" as="geometry" />
         </mxCell>
         <mxCell id="network-requirements" value="1. VPC Endpoints: Not required (Snowflake is public SaaS)&#xa;2. PrivateLink: Optional for enhanced security (Snowflake Business Critical Edition)&#xa;3. NAT Gateway: Required for Lambda → Snowflake HTTPS calls&#xa;4. Internet Gateway: Required for public subnet resources&#xa;5. Security Groups: Allow HTTPS (443) outbound to Snowflake endpoints&#xa;6. Network ACLs: Default allow for HTTPS traffic&#xa;7. IAM Roles: Cross-account trust for Kinesis → Snowflake Openflow&#xa;8. DNS Resolution: VPC must resolve Snowflake endpoints (*.snowflakecomputing.com)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;" parent="network-box" vertex="1">
           <mxGeometry x="20" y="30" width="700" height="100" as="geometry" />
