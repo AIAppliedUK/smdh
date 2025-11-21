@@ -1,0 +1,75 @@
+@startuml Multi_Tenancy_Comparison
+
+!theme plain
+skinparam defaultFontName Arial
+
+title Multi-Tenancy Isolation Strategies in Snowflake
+
+package "Strategy 1: Row-Level Security (RLS)" {
+    database "Shared Database" as shared_db {
+        rectangle "sensor_readings table" as shared_table {
+            [tenant_id: company_a | data: ...]
+            [tenant_id: company_b | data: ...]
+            [tenant_id: company_c | data: ...]
+        }
+        
+        rectangle "Row Access Policy" as rls_policy {
+            label "tenant_isolation_policy"
+            note right
+                Automatically filters WHERE clause:
+                WHERE tenant_id = CURRENT_USER()
+                OR CURRENT_ROLE() = 'ADMIN'
+            end note
+        }
+    }
+    
+    actor "company_a_user" as user_a
+    actor "company_b_user" as user_b
+    
+    user_a --> rls_policy : SELECT * FROM sensor_readings
+    user_b --> rls_policy : SELECT * FROM sensor_readings
+    rls_policy --> shared_table : Filtered query
+    
+    note bottom of shared_table
+        **CRITICAL LIMITATION:**
+        RLS filters SELECT queries (post-ingestion)
+        Does NOT validate tenant_id during INSERT
+        Relies on application layer to set correct tenant_id
+    end note
+}
+
+package "Strategy 2: Database-Level Segregation" {
+    database "company_a_db" as db_a {
+        [sensor_readings table]
+        [Aggregation views]
+        [Analytics datasets]
+    }
+    
+    database "company_b_db" as db_b {
+        [sensor_readings table]
+        [Aggregation views]
+        [Analytics datasets]
+    }
+    
+    database "company_c_db" as db_c {
+        [sensor_readings table]
+        [Aggregation views]
+        [Analytics datasets]
+    }
+    
+    actor "company_a_user" as user_a2
+    actor "company_b_user" as user_b2
+    
+    user_a2 --> db_a : Can only access\ncompany_a_db
+    user_b2 --> db_b : Can only access\ncompany_b_db
+    
+    note bottom of db_a
+        **STRONGER ISOLATION:**
+        Physical database separation
+        User permissions prevent cross-database access
+        Incorrect tenant_id causes table not found error
+        (fails closed rather than exposing data)
+    end note
+}
+
+@enduml

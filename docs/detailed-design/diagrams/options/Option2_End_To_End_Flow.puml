@@ -1,0 +1,52 @@
+@startuml SMDH_Complete_Sequence
+!theme plain
+skinparam BackgroundColor white
+
+title SMDH Complete Data Flow - Sensor to Snowflake
+
+participant "Sensor" as sensor
+participant "Gateway" as gw
+participant "API Gateway" as apigw
+participant "Lambda" as lambda
+database "DynamoDB" as dynamo
+database "Secrets" as secrets
+participant "Snowflake" as sf
+queue "SQS DLQ" as dlq
+
+sensor -> gw : Measure: 22.5°C
+gw -> gw : Decrypt LoRaWAN\nDecode payload\nAdd metadata
+
+gw -> apigw : POST /ingest\nx-api-key: xyz123\nJSON payload
+
+apigw -> apigw : Validate API key
+
+alt API Key Invalid
+    apigw -> gw : 403 Forbidden
+else API Key Valid
+    apigw -> lambda : Invoke function
+    
+    lambda -> dynamo : Query: api_key → tenant_id
+    dynamo -> lambda : tenant_id: company_a
+    
+    lambda -> lambda : Validate:\npayload.tenant_id\n== company_a?
+    
+    alt Tenant Mismatch
+        lambda -> dlq : Send to DLQ
+        lambda -> apigw : 403 Forbidden
+    else Tenant Match
+        lambda -> secrets : Get private key
+        secrets -> lambda : RSA-2048 key
+        
+        lambda -> lambda : Generate JWT\n(cached if <5 min old)
+        
+        lambda -> sf : POST Snowpipe\nAuthorization: Bearer {JWT}
+        
+        sf -> sf : Verify JWT\nInsert row
+        sf -> lambda : 200 OK
+        
+        lambda -> apigw : 200 OK
+        apigw -> gw : 200 OK
+    end
+end
+
+@enduml

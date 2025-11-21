@@ -1,0 +1,53 @@
+@startuml SMDH_Conceptual_Architecture
+!theme plain
+skinparam BackgroundColor white
+skinparam DefaultTextAlignment center
+skinparam rectangle {
+    BackgroundColor<<edge>> #E8F5E9
+    BackgroundColor<<aws>> #E3F2FD
+    BackgroundColor<<snowflake>> #F3E5F5
+    BorderColor #424242
+    FontSize 11
+}
+
+title Smart Manufacturing Data Hub - Conceptual Architecture\nOption 2: API Gateway + Lambda Proxy
+
+rectangle "Edge Layer\n(Customer Sites)" <<edge>> {
+    rectangle "DevTank\nSensors" as sensors
+    rectangle "LoRaWAN\n868MHz" as lora
+    rectangle "UG65\nGateway" as gateway
+    
+    sensors -down-> lora : AES-128\nEncrypted
+    lora -down-> gateway : Radio\nReception
+}
+
+rectangle "AWS Ingestion Layer\n(eu-west-2 London)" <<aws>> {
+    rectangle "API Gateway" as apigw
+    note right of apigw : API Key\nValidation
+    
+    rectangle "Lambda" as lambda
+    note right of lambda : Tenant Validation\nJWT Generation
+    
+    rectangle "DynamoDB" as dynamo
+    note right of dynamo : API Key →\nTenant Mapping
+    
+    rectangle "Secrets\nManager" as secrets
+    note right of secrets : Snowflake\nPrivate Key
+}
+
+rectangle "Snowflake Analytics\n(AWS eu-west-2)" <<snowflake>> {
+    rectangle "Snowpipe\nStreaming" as snowpipe
+    rectangle "Tenant\nDatabases" as tables
+    rectangle "BI Tools" as bi
+    
+    snowpipe -down-> tables
+    tables -down-> bi
+}
+
+gateway -down-> apigw : HTTPS POST\nx-api-key: xyz
+apigw -down-> lambda : Validated\nRequest
+lambda -right-> dynamo : Lookup\ntenant_id
+lambda -right-> secrets : Retrieve\nPrivate Key
+lambda -down-> snowpipe : JWT Auth\nJSON Rows
+
+@enduml

@@ -251,6 +251,8 @@ dashboards/
 *.bak
 *.backup
 *.old
+*.bkp
+.$*.drawio.bkp
 
 # Compressed files
 *.zip

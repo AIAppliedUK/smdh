@@ -1,11 +1,12 @@
 # Smart Manufacturing Data Hub (SMDH) - System Requirements Document
 
 ## Document Information
-- **Version**: 1.0
-- **Date**: October 2025
-- **Status**: Approved
+- **Version**: 1.1 (Requirements Clarification Update)
+- **Date**: November 2025
+- **Status**: Under Review - Validation Required
 - **Owner**: AI Applied
 - **Classification**: Internal Use
+- **Change Summary**: Removed arbitrary budget targets and timing constraints; replaced with consumption-based cost model and use-case-appropriate performance requirements
 
 ---
 
@@ -75,7 +76,7 @@ This principle ensures that:
 | Daily data processing capacity | 2.6M-3.9M rows/day | High |
 | Platform availability | 99.9% uptime SLA | Critical |
 | Data analytics latency | <5 minutes for KPIs | High |
-| Real-time monitoring latency | <1 second for alerts | High |
+| Alert response latency | Appropriate for alert criticality (see FR-11) | High |
 | Dashboard provisioning time | <5 minutes after device registration | High |
 | Onboarding completion time | <30 minutes for basic setup | Medium |
 
@@ -96,11 +97,11 @@ This principle ensures that:
 
 ### 3.3 Business Constraints
 
-- **Budget**: Target cost of £200-300 per tenant per month
+- **Cost Efficiency**: Infrastructure costs must be proportional to actual data consumption and scale linearly with tenant count
 - **Geographic Coverage**: Initial deployment in UK/EU (data residency in eu-west-2)
 - **Compliance**: GDPR, ISO 27001, SOC 2 Type II alignment
 - **Scalability**: Must scale to 100+ companies within 3 years
-- **Time to Market**: Phase 1 deployment within 6 months
+- **Time to Market**: Phase 1 deployment target (to be determined based on architecture selection)
 
 ---
 
@@ -411,10 +412,15 @@ The system SHALL provide intelligent alerting capabilities:
 - Predictive maintenance required
 
 **Acceptance Criteria:**
-- Alerts trigger within 10 seconds of threshold breach
+- Alerts trigger within appropriate timeframe based on alert criticality (see note below)
 - Email notifications deliver within 1 minute
-- SMS notifications deliver within 30 seconds
+- SMS notifications deliver within 30 seconds for critical alerts
 - Alert acknowledgement reflects in system within 1 second
+
+> **⚠️ VALIDATION REQUIRED**: Alert latency requirements (previously specified as <10 seconds) need validation with manufacturing operators to determine actual operational needs. Different alert types may require different latencies:
+> - **Critical safety alerts** (e.g., toxic gas levels): Immediate (<10 seconds may be required)
+> - **Operational alerts** (e.g., machine offline): Standard (<60 seconds may be acceptable)
+> - **Informational alerts** (e.g., trending issues): Non-urgent (<5 minutes may be acceptable)
 
 ---
 
@@ -426,9 +432,11 @@ The system SHALL provide intelligent alerting capabilities:
 - **Web Portal**: Page load time <2 seconds (95th percentile)
 - **Dashboard Rendering**: Initial load <2 seconds, refresh <500ms
 - **API Response Time**: <200ms for 95% of requests
-- **Data Ingestion Latency**: End-to-end <5 seconds from device to visualisation
-- **Real-Time Monitoring**: Update frequency <1 second for critical metrics
+- **Data Ingestion Latency**: End-to-end <5 seconds from device to visualisation for standard data flow
+- **Real-Time Monitoring**: Dashboard update frequency appropriate for use case (critical alerts: <10s, operational dashboards: <60s, historical analytics: <5min)
 - **Search Functionality**: Results returned in <1 second for typical queries
+
+> **Note**: Real-time monitoring requirements vary by use case. Critical safety monitoring may require sub-10-second updates, while operational dashboards can tolerate 30-60 second refresh cycles. Architecture selection should match actual operational needs rather than theoretical minimums.
 
 #### NFR-2: Scalability
 - **Concurrent Users**: Support 20-40 concurrent users per tenant
@@ -639,7 +647,7 @@ The system SHALL provide intelligent alerting capabilities:
 **Data Requirements:**
 - Sensor frequency: 1-minute intervals
 - Data retention: 2 years minimum for compliance
-- Alert latency: <10 seconds from threshold breach
+- Alert latency: Based on alert criticality (see FR-11 for validation notes)
 - Report generation: Automated monthly
 
 ### 6.3 Job Location Tracking
@@ -797,7 +805,7 @@ The system SHALL provide intelligent alerting capabilities:
 |--------|--------|-------------------|
 | Customer acquisition | 30 companies (Year 1) | CRM tracking |
 | Customer retention | >90% annual | Churn analysis |
-| Revenue per tenant | £200-300/month | Billing system |
+| Cost per tenant efficiency | Infrastructure costs scale linearly with usage | Cost monitoring system |
 | Tenant growth rate | 30% YoY | Business analytics |
 | Net Promoter Score | >50 | Quarterly surveys |
 
@@ -882,9 +890,87 @@ The following features are explicitly out of scope for the initial release but m
 
 ---
 
-## 12. Appendices
+## 12. Requirements Validation Checklist
+
+**⚠️ IMPORTANT**: The following requirements need stakeholder validation before finalizing the architecture:
+
+### 12.1 Alert Latency Requirements
+
+**Current State**: Generic requirement for fast alerting without use-case differentiation
+
+**Questions for Manufacturing Operators:**
+1. What is the actual response time when you receive an alert? (Immediate? 5 minutes? 15 minutes?)
+2. Have you experienced systems with <10-second alerting? What was the operational benefit?
+3. Which alerts are truly time-critical vs. informational?
+4. Are there regulatory requirements for specific alert latencies?
+
+**Recommended Approach**:
+- Categorize alerts by criticality (Critical Safety / Operational / Informational)
+- Define appropriate latency SLAs for each category
+- Validate with actual manufacturing floor workflows
+
+### 12.2 Cost Model Validation
+
+**Current State**: Infrastructure costs based on consumption patterns (2.6M-3.9M rows/day, 30 tenants)
+
+**Questions for Business Stakeholders:**
+1. What is the acceptable cost structure for the business model?
+2. What are customer expectations around pricing?
+3. What is the competitive pricing landscape?
+4. Should pricing be tiered by data volume, features, or flat-rate?
+
+**Recommended Approach**:
+- Research competitor pricing models
+- Conduct customer willingness-to-pay interviews
+- Calculate cost-plus-margin based on actual consumption
+- Define clear cost drivers that customers can understand and control
+
+### 12.3 Timeline Validation
+
+**Current State**: Timeline to be determined based on architecture selection
+
+**Questions for Product/Business:**
+1. Is there a specific market window or competitive pressure?
+2. What are the opportunity costs of delayed launch?
+3. Is there pre-sold or committed revenue requiring specific delivery dates?
+4. What is the minimum viable feature set for initial launch?
+
+**Recommended Approach**:
+- Define MVP scope (absolutely essential features only)
+- Calculate opportunity cost of different launch dates
+- Consider phased rollout (limited beta → general availability)
+
+### 12.4 Real-Time Monitoring Requirements
+
+**Current State**: Requirements updated to be use-case appropriate
+
+**Questions for End Users:**
+1. How frequently do you check manufacturing dashboards? (Every minute? Every hour?)
+2. What decisions do you make based on real-time data vs. historical trends?
+3. Which metrics need real-time visibility vs. daily/weekly reports?
+
+**Recommended Approach**:
+- Map dashboard use cases to actual usage patterns
+- Define refresh rates based on decision-making frequency
+- Avoid over-engineering for theoretical requirements
+
+### 12.5 Validation Timeline
+
+| Activity | Owner | Deadline | Status |
+|----------|-------|----------|--------|
+| Alert latency requirements validation | Product Owner + Ops | TBD | ⏳ Not Started |
+| Cost model and pricing research | Business Development | TBD | ⏳ Not Started |
+| Timeline and MVP scope definition | Product Owner | TBD | ⏳ Not Started |
+| Real-time monitoring use case mapping | UX Research | TBD | ⏳ Not Started |
+| Requirements document final approval | All Stakeholders | TBD | ⏳ Not Started |
+
+---
+
+## 13. Appendices
 
 ### Appendix A: Glossary
+
+> **Note**: See Section 12 for requirements validation checklist
 
 | Term | Definition |
 |------|------------|

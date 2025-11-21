@@ -1,0 +1,204 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/28.2.8 Chrome/140.0.7339.240 Electron/38.4.0 Safari/537.36" version="28.2.8">
+  <diagram name="SMDH Detailed Data Flow" id="dataflow-detailed">
+    <mxGraphModel dx="1186" dy="829" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="827" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="SMDH Detailed Data Flow: Sensor Ingestion to Analytics" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1" parent="1" vertex="1">
+          <mxGeometry x="304" y="10" width="560" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="main-flow" value="Primary Data Flow: Sensor Readings" style="swimlane;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=14;fontStyle=1" parent="1" vertex="1">
+          <mxGeometry x="40" y="70" width="1080" height="280" as="geometry" />
+        </mxCell>
+        <mxCell id="step1" value="1. Sensor&#xa;Reading&#xa;1 Hz" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontStyle=1" parent="main-flow" vertex="1">
+          <mxGeometry x="20" y="40" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="step1-time" value="&lt;1ms" style="text;html=1;strokeColor=none;fillColor=#d5e8d4;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fontStyle=1" parent="main-flow" vertex="1">
+          <mxGeometry x="25" y="130" width="70" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="step2" value="2. LoRaWAN&#xa;Transmission&#xa;868 MHz" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" parent="main-flow" vertex="1">
+          <mxGeometry x="130" y="40" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="step2-time" value="&lt;100ms" style="text;html=1;strokeColor=none;fillColor=#d5e8d4;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fontStyle=1" parent="main-flow" vertex="1">
+          <mxGeometry x="135" y="130" width="70" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="step3" value="3. Gateway&#xa;UG65&#xa;+ API Key" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1" parent="main-flow" vertex="1">
+          <mxGeometry x="240" y="40" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="step3-time" value="&lt;50ms" style="text;html=1;strokeColor=none;fillColor=#d5e8d4;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fontStyle=1" parent="main-flow" vertex="1">
+          <mxGeometry x="245" y="130" width="70" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="step4" value="4. API&#xa;Gateway&#xa;Validate Key" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1" parent="main-flow" vertex="1">
+          <mxGeometry x="350" y="40" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="step4-time" value="10-30ms" style="text;html=1;strokeColor=none;fillColor=#d5e8d4;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fontStyle=1" parent="main-flow" vertex="1">
+          <mxGeometry x="355" y="130" width="70" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="step5" value="5. Lambda&#xa;JWT + Tenant&#xa;Validation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1" parent="main-flow" vertex="1">
+          <mxGeometry x="465" y="40" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="step5-time" value="50-200ms" style="text;html=1;strokeColor=none;fillColor=#d5e8d4;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fontStyle=1" parent="main-flow" vertex="1">
+          <mxGeometry x="470" y="130" width="70" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="step6" value="6. Snowpipe&#xa;Streaming&#xa;POST" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;fontStyle=1" parent="main-flow" vertex="1">
+          <mxGeometry x="570" y="40" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="step6-time" value="50-200ms" style="text;html=1;strokeColor=none;fillColor=#d5e8d4;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fontStyle=1" parent="main-flow" vertex="1">
+          <mxGeometry x="575" y="130" width="70" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="step7" value="7. Raw Table&#xa;Insert&#xa;VARIANT" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;fontStyle=1" parent="main-flow" vertex="1">
+          <mxGeometry x="670" y="40" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="step7-time" value="5-15s" style="text;html=1;strokeColor=none;fillColor=#d5e8d4;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fontStyle=1" parent="main-flow" vertex="1">
+          <mxGeometry x="675" y="130" width="70" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="step8" value="8. Stream&#xa;CDC&#xa;Trigger" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" parent="main-flow" vertex="1">
+          <mxGeometry x="780" y="40" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="step8-time" value="&lt;1s" style="text;html=1;strokeColor=none;fillColor=#d5e8d4;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fontStyle=1" parent="main-flow" vertex="1">
+          <mxGeometry x="785" y="130" width="70" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="step9" value="9. Task&#xa;Execute&#xa;Validation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" parent="main-flow" vertex="1">
+          <mxGeometry x="880" y="40" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="step9-time" value="10-30s" style="text;html=1;strokeColor=none;fillColor=#d5e8d4;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fontStyle=1" parent="main-flow" vertex="1">
+          <mxGeometry x="885" y="130" width="70" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="step10" value="10. Dynamic&#xa;Tables&#xa;Refresh" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;fontStyle=1" parent="main-flow" vertex="1">
+          <mxGeometry x="990" y="40" width="80" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="step10-time" value="1-5 min" style="text;html=1;strokeColor=none;fillColor=#d5e8d4;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;fontStyle=1" parent="main-flow" vertex="1">
+          <mxGeometry x="995" y="130" width="70" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="flow-arrow1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#00796B;" parent="main-flow" source="step1" target="step2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="flow-arrow2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#00796B;" parent="main-flow" source="step2" target="step3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="flow-arrow3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#D84315;" parent="main-flow" source="step3" target="step4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="flow-arrow4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#D84315;" parent="main-flow" source="step4" target="step5" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="flow-arrow5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=4;strokeColor=#0D47A1;" parent="main-flow" source="step5" target="step6" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="flow-arrow6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#0D47A1;" parent="main-flow" source="step6" target="step7" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="flow-arrow7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#0D47A1;" parent="main-flow" source="step7" target="step8" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="flow-arrow8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#0D47A1;" parent="main-flow" target="step9" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="860" y="80" as="sourcePoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="flow-arrow9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#0D47A1;" parent="main-flow" source="step9" target="step10" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="total-latency" value="TOTAL END-TO-END LATENCY: ~1-6 minutes (Sensor → Dashboard)" style="text;html=1;strokeColor=#82b366;fillColor=#d5e8d4;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontStyle=1;fontSize=14;" parent="main-flow" vertex="1">
+          <mxGeometry x="20" y="170" width="1050" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="breakdown" value="Breakdown: Ingestion (&lt;1s) + Snowpipe buffering (5-15s) + Task execution (10-30s) + Dynamic Table refresh (1-5 min)" style="text;html=1;strokeColor=none;fillColor=#fff;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=10;" parent="main-flow" vertex="1">
+          <mxGeometry x="20" y="220" width="980" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="lambda-detail" value="Lambda Processing Detail (Step 5)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=14;fontStyle=1" parent="1" vertex="1">
+          <mxGeometry x="40" y="370" width="530" height="280" as="geometry" />
+        </mxCell>
+        <mxCell id="lambda-sub1" value="5a. Extract&#xa;API Key&#xa;from header" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="lambda-detail" vertex="1">
+          <mxGeometry x="20" y="40" width="90" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="lambda-sub1-time" value="&lt;1ms" style="text;html=1;strokeColor=none;fillColor=#ffe6cc;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;" parent="lambda-detail" vertex="1">
+          <mxGeometry x="25" y="120" width="80" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lambda-sub2" value="5b. DynamoDB&#xa;Lookup&#xa;tenant_id" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1" parent="lambda-detail" vertex="1">
+          <mxGeometry x="150" y="40" width="90" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="lambda-sub2-time" value="1-5ms" style="text;html=1;strokeColor=none;fillColor=#ffe6cc;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;" parent="lambda-detail" vertex="1">
+          <mxGeometry x="155" y="120" width="80" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lambda-sub3" value="5c. Validate&#xa;Tenant Match&#xa;CRITICAL" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1" parent="lambda-detail" vertex="1">
+          <mxGeometry x="290" y="40" width="90" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="lambda-sub3-time" value="&lt;1ms" style="text;html=1;strokeColor=none;fillColor=#ffe6cc;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;" parent="lambda-detail" vertex="1">
+          <mxGeometry x="295" y="120" width="80" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lambda-sub4" value="5d. Generate&#xa;JWT Token&#xa;(cached)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="lambda-detail" vertex="1">
+          <mxGeometry x="420" y="40" width="90" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="lambda-sub4-time" value="&lt;1ms" style="text;html=1;strokeColor=none;fillColor=#ffe6cc;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=1;fontSize=9;" parent="lambda-detail" vertex="1">
+          <mxGeometry x="425" y="120" width="80" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="lambda-arrow1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#D84315;" parent="lambda-detail" source="lambda-sub1" target="lambda-sub2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lambda-arrow2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#D84315;" parent="lambda-detail" source="lambda-sub2" target="lambda-sub3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="lambda-arrow3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=2;strokeColor=#D84315;" parent="lambda-detail" source="lambda-sub3" target="lambda-sub4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="validation-box" value="Tenant Validation Logic (Fail-Closed Security)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;fontStyle=1" parent="lambda-detail" vertex="1">
+          <mxGeometry x="20" y="160" width="490" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="validation-text" value="IF (api_key_tenant_id != payload_tenant_id) THEN&#xa;    → Log security violation&#xa;    → Send to DLQ for investigation&#xa;    → Return 403 Forbidden (BLOCK INGESTION)&#xa;ELSE → Proceed to Snowpipe Streaming" style="text;html=1;strokeColor=none;fillColor=#fff;align=left;verticalAlign=top;whiteSpace=wrap;rounded=1;fontSize=10;fontFamily=Courier New;" parent="validation-box" vertex="1">
+          <mxGeometry x="10" y="25" width="470" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="snowflake-detail" value="Snowflake Processing Detail (Steps 7-10)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=14;fontStyle=1" parent="1" vertex="1">
+          <mxGeometry x="590" y="370" width="530" height="280" as="geometry" />
+        </mxCell>
+        <mxCell id="sf-layer1" value="Raw Layer&#xa;sensor_readings&#xa;VARIANT payload" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" parent="snowflake-detail" vertex="1">
+          <mxGeometry x="20" y="40" width="110" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="sf-layer2" value="Normalized&#xa;Flattened metrics&#xa;Stream triggers" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" parent="snowflake-detail" vertex="1">
+          <mxGeometry x="150" y="40" width="110" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="sf-layer3" value="Aggregated&#xa;Hourly rollups&#xa;Dynamic Tables" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;fontStyle=1" parent="snowflake-detail" vertex="1">
+          <mxGeometry x="280" y="40" width="110" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="sf-layer4" value="Analytics&#xa;Views + ML&#xa;Cortex functions" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b1ddf0;strokeColor=#10739e;" parent="snowflake-detail" vertex="1">
+          <mxGeometry x="410" y="40" width="110" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="sf-arrow1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#0D47A1;" parent="snowflake-detail" source="sf-layer1" target="sf-layer2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sf-arrow2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#0D47A1;" parent="snowflake-detail" source="sf-layer2" target="sf-layer3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="sf-arrow3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeWidth=3;strokeColor=#0D47A1;" parent="snowflake-detail" source="sf-layer3" target="sf-layer4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="data-org" value="Database-Per-Tenant Organization" style="swimlane;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontStyle=1" parent="snowflake-detail" vertex="1">
+          <mxGeometry x="20" y="130" width="500" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="data-org-text" value="smdh_tenant_company_a/&#xa;  ├─ raw.sensor_readings (VARIANT, clustered by sensor_type + date)&#xa;  ├─ normalized.sensor_readings_normalized (Dynamic Table, 1 min lag)&#xa;  ├─ aggregated.machine_utilization_hourly (Dynamic Table, 5 min lag)&#xa;  ├─ aggregated.air_quality_current (Dynamic Table with Cortex ML)&#xa;  └─ analytics.* (Views for Power BI / Streamlit)&#xa;&#xa;Fail-Closed: Incorrect database name → SQL error (not data leak)" style="text;html=1;strokeColor=none;fillColor=#fff;align=left;verticalAlign=top;whiteSpace=wrap;rounded=1;fontSize=9;fontFamily=Courier New;" parent="data-org" vertex="1">
+          <mxGeometry x="10" y="25" width="480" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="analytics-detail" value="Analytics Consumption (Real-time)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=14;fontStyle=1" parent="1" vertex="1">
+          <mxGeometry x="40" y="670" width="1080" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="streamlit-box" value="Snowflake Streamlit&#xa;Python Portal&#xa;Direct SQL queries" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6d0de;strokeColor=#996185;fontStyle=1" parent="analytics-detail" vertex="1">
+          <mxGeometry x="50" y="40" width="150" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="streamlit-features" value="✓ Native Snowflake&#xa;✓ Inherits RBAC/RLS&#xa;✓ File upload support" style="text;html=1;strokeColor=none;fillColor=#e1d5e7;align=left;verticalAlign=top;whiteSpace=wrap;rounded=1;fontSize=9;" parent="analytics-detail" vertex="1">
+          <mxGeometry x="220" y="40" width="150" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="powerbi-box" value="Power BI&#xa;DirectQuery&#xa;Snowflake connector" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6d0de;strokeColor=#996185;fontStyle=1" parent="analytics-detail" vertex="1">
+          <mxGeometry x="420" y="40" width="150" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="powerbi-features" value="✓ SSO via SAML&#xa;✓ Inherits Snowflake RLS&#xa;✓ Real-time refresh" style="text;html=1;strokeColor=none;fillColor=#e1d5e7;align=left;verticalAlign=top;whiteSpace=wrap;rounded=1;fontSize=9;" parent="analytics-detail" vertex="1">
+          <mxGeometry x="590" y="40" width="150" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="users-box" value="End Users&#xa;20-40 per tenant&#xa;SSO Authentication" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e6d0de;strokeColor=#996185;" parent="analytics-detail" vertex="1">
+          <mxGeometry x="790" y="40" width="150" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="users-features" value="✓ Single sign-on&#xa;✓ Row-level security&#xa;✓ Role-based access" style="text;html=1;strokeColor=none;fillColor=#e1d5e7;align=left;verticalAlign=top;whiteSpace=wrap;rounded=1;fontSize=9;" parent="analytics-detail" vertex="1">
+          <mxGeometry x="960" y="40" width="110" height="60" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

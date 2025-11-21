@@ -1,0 +1,93 @@
+@startuml SMDH_Option1_Conceptual
+
+!theme plain
+skinparam defaultFontName Arial
+skinparam defaultFontSize 11
+skinparam rectangle {
+    BackgroundColor<<sensor>> #E8F5E9
+    BackgroundColor<<gateway>> #E3F2FD
+    BackgroundColor<<cloud>> #FFF9C4
+    BackgroundColor<<snowflake>> #E1F5FE
+    BackgroundColor<<blocker>> #FFCDD2
+    BorderColor Black
+    Shadowing false
+}
+
+title SMDH Option 1: Direct Gateway to Snowflake Architecture (Conceptual)
+
+rectangle "Manufacturing Facility" {
+    rectangle "DevTank Sensor Network" as sensors <<sensor>> {
+        agent "Temperature/Humidity\nSensors (5min)" as temp
+        agent "Energy Metres\n(1Hz)" as power
+        agent "Air Quality\nMonitors (5min)" as air
+        agent "RFID Readers\n(Event-driven)" as rfid
+    }
+    
+    rectangle "LoRaWAN Radio Layer" as radio {
+        note right
+            868MHz ISM Band
+            2-5km range
+            AES-128 encryption
+            LoRaWAN 1.0.3 protocol
+        end note
+    }
+    
+    rectangle "Milesight UG65\nLoRaWAN Gateway" as gateway <<gateway>> {
+        [Built-in Network Server]
+        [JavaScript Payload Decoder]
+        [HTTP/HTTPS Client]
+        note bottom: Stateless HTTP client\nStatic headers only\nNo cryptographic operations
+    }
+}
+
+cloud "Public Internet" as internet <<cloud>> {
+    rectangle "CRITICAL AUTHENTICATION GAP" as auth <<blocker>> {
+        label "JWT Token Generation\nNOT SUPPORTED\nby Gateway Firmware"
+        note right
+            Gateway cannot:
+            - Generate RSA signatures
+            - Create JWT tokens
+            - Refresh expired tokens
+            - Detect auth failures
+        end note
+    }
+}
+
+cloud "Snowflake\n(AWS EU-West-2 Region)" <<snowflake>> {
+    rectangle "Snowpipe Streaming API" as streaming {
+        note right
+            REQUIRES:
+            - JWT authentication (hourly)
+            - Channel state management
+            - Continuation tokens
+            - Offset token tracking
+        end note
+    }
+    
+    database "Multi-Tenant\nData Warehouse" as warehouse {
+        [sensor_readings table\n(tenant_id partitioned)]
+        [Aggregation views]
+        [Analytics datasets]
+    }
+    
+    rectangle "Row-Level Security\nPolicies" as rls {
+        note right: Filters SELECT queries\nby tenant_id\n(post-ingestion only)
+    }
+}
+
+sensors -down-> radio : "LoRaWAN\npackets"
+radio -down-> gateway : "868MHz\nwireless"
+gateway -right-> auth : "HTTPS POST\nattempt"
+auth -[#red,dashed,thickness=3]-> streaming : "BLOCKED:\nAuthentication\nfailure"
+streaming -down-> warehouse : "Insert rows\n(if authenticated)"
+warehouse -down-> rls : "Query\nfiltering"
+
+legend right
+    |= Status |= Meaning |
+    | AVAILABLE | Component exists and functions |
+    | BLOCKED | Critical technical blocker |
+    | WARNING | High risk requiring mitigation |
+    | Dashed red line | Failed connection path |
+endlegend
+
+@enduml

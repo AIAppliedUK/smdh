@@ -1,0 +1,45 @@
+@startuml MultiTenancy_Comparison
+!theme plain
+skinparam BackgroundColor white
+
+title Multi-Tenancy Strategy Comparison
+
+package "Strategy 1: Row-Level Security" {
+    database "smdh_db" as db1 {
+        rectangle "sensor_readings\n(tenant_id | device_eui | data)" as table1
+    }
+    
+    rectangle "Row Access Policy" as policy1
+    note right of policy1
+    Filters SELECT queries by tenant_id
+    BUT: No INSERT validation
+    end note
+    
+    table1 -down-> policy1
+    
+    actor "Company A" as user1a
+    actor "Company B" as user1b
+    
+    user1a --> db1 : SELECT\n(sees A only)
+    user1b --> db1 : SELECT\n(sees B only)
+}
+
+package "Strategy 2: Database-Level Segregation" {
+    database "smdh_tenant_\ncompany_a" as db2a {
+        rectangle "sensor_readings" as table2a
+    }
+    
+    database "smdh_tenant_\ncompany_b" as db2b {
+        rectangle "sensor_readings" as table2b
+    }
+    
+    actor "Company A" as user2a
+    actor "Company B" as user2b
+    
+    user2a --> db2a : SELECT\n(only A access)
+    user2b --> db2b : SELECT\n(only B access)
+    
+    note bottom of db2a : Physical isolation\nFail-closed security
+}
+
+@enduml
