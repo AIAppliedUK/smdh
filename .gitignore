@@ -67,10 +67,24 @@ jspm_packages/
 
 # dotenv environment variables file
 .env
+.env.*
 .env.local
+.env.development
 .env.development.local
+.env.test
 .env.test.local
+.env.production
 .env.production.local
+.env.staging
+.env.staging.local
+*.env
+!example.env
+!.env.example
+!.env.template
+env.sh
+setenv.sh
+config.env
+secrets.env
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -98,12 +112,37 @@ temp/
 # AWS
 .aws/
 aws-exports.js
+aws-config.json
+aws-credentials
+aws_credentials
+credentials.csv
+*_accessKeys.csv
+*.aws-credentials
+aws-secret*
+aws_secret*
+*-aws-keys*
+iam-policy.json
+trust-policy.json
 
 # Terraform
 *.tfstate
 *.tfstate.*
 .terraform/
 .terraform.lock.hcl
+terraform.tfvars
+*.tfvars
+*.auto.tfvars
+*.auto.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+crash.log
+crash.*.log
+*.backup
+.terraform.tfstate.lock.info
 
 # Python
 __pycache__/
@@ -168,13 +207,96 @@ docker-compose.override.yml
 
 # Secrets and sensitive files
 secrets/
+private/
 *.pem
 *.key
 *.crt
+*.cer
+*.der
 *.p12
 *.pfx
+*.p7b
+*.p7c
+*.jks
+*.keystore
+*.truststore
 credentials.json
+credentials-*.json
 service-account-key.json
+service-account-*.json
+*-credentials.json
+*-key.json
+*.private
+*.priv
+private_key*
+public_key*
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+*.ppk
+*.pub
+*.asc
+*.gpg
+*.pgp
+
+# Passwords and authentication files
+*password*
+*passwd*
+*.pass
+*.password
+*.passwords
+*.pwd
+*-pwd.*
+*_pwd.*
+password.txt
+passwords.txt
+passwd.txt
+.htpasswd
+.htaccess
+auth.json
+auth.yml
+auth.yaml
+authentication.json
+*-auth.json
+*_auth.json
+*.auth
+.netrc
+.authinfo
+.gitcredentials
+git-credentials
+
+# OAuth and tokens
+*token*
+*-token.*
+*_token.*
+*.token
+tokens.json
+refresh_token*
+access_token*
+oauth-token*
+jwt_token*
+api_key*
+api-key*
+apikey*
+*.apikey
+secret_token*
+
+# Database connection strings and configs
+*.connection
+connection.json
+connection.yml
+connection.yaml
+database.json
+database.yml
+database.yaml
+db.json
+db.yml
+db.yaml
+*-db-config.*
+*_db_config.*
+datasource.properties
+hibernate.cfg.xml
 
 # Documentation build
 docs/_build/
@@ -233,11 +355,40 @@ models/
 # Snowflake
 snowflake_connector/
 *.snowflake
+snowflake.config
+snowflake-config.json
+snowflake-credentials.json
+snowsql/config
+.snowsql/
+snowflake_config/
+*_snowflake_password*
+*_snowflake_key*
+snowflake-*.json
+snowflake-*.yml
+snowflake-*.yaml
 
 # IoT and sensor data
 sensor_data/
 device_logs/
 mqtt_logs/
+
+# IoT Core and MQTT certificates/credentials
+iot-core-config.json
+iot-credentials*
+*-certificate.pem.crt
+*-private.pem.key
+*-public.pem.key
+root-CA.crt
+AmazonRootCA*.pem
+device-certificate*
+thing-certificate*
+mqtt-config.json
+mqtt-credentials*
+*.mqtt-credentials
+device-*.key
+device-*.crt
+thing-*.key
+thing-*.crt
 
 # Analytics and reports
 reports/
@@ -246,6 +397,20 @@ dashboards/
 *.pdf
 *.xlsx
 *.csv
+
+# Streamlit
+.streamlit/
+.streamlit/config.toml
+.streamlit/secrets.toml
+streamlit-secrets.toml
+secrets.toml
+*-secrets.toml
+
+# Kinesis
+kinesis-config.json
+kinesis-credentials*
+stream-config.json
+*-kinesis-config.json
 
 # Backup files
 *.bak
@@ -280,3 +445,31 @@ test_results/
 # Performance and profiling
 *.prof
 *.profile
+
+# General security patterns - catch-all
+*secret*
+*SECRET*
+*credential*
+*CREDENTIAL*
+*.secret
+*.secrets
+.secrets/
+config/production/
+config/staging/
+sensitive/
+confidential/
+*.conf
+!example.conf
+!sample.conf
+*.config
+!example.config
+!sample.config
+vault.json
+vault.yml
+*-vault.*
+.vault-token
+.consul-token
+kube-config
+kubeconfig
+*.ovpn
+*.rdp
