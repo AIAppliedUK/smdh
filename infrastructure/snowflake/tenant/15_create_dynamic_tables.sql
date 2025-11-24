@@ -2,7 +2,7 @@
 -- SMDH Tenant Dynamic Tables Creation (Real-Time Aggregations)
 -- ============================================================================
 -- Purpose: Create dynamic tables for continuously refreshed aggregations
--- Usage: snowsql -f tenant/15_create_dynamic_tables.sql -D tenant_id='company_a'
+-- Usage: snowsql -f tenant/15_create_dynamic_tables.sql --variable tenant_id='company_a'
 -- Author: SMDH Platform Team
 -- Version: 1.0
 -- ============================================================================
@@ -14,6 +14,7 @@
 -- ============================================================================
 
 USE ROLE ACCOUNTADMIN;
+USE WAREHOUSE SMDH_WH;
 
 -- Display banner
 SELECT '╔════════════════════════════════════════════════════════════════╗' AS banner
@@ -26,9 +27,9 @@ UNION ALL SELECT '╚═══════════════════�
 
 SELECT '1. Validating Environment...' AS step;
 
-SET database_name = 'smdh_tenant_' || '&tenant_id';
+SET database_name = 'smdh_tenant_' || $tenant_id;
 
-USE DATABASE IDENTIFIER(&database_name);
+USE DATABASE IDENTIFIER($database_name);
 
 -- Check Snowflake version for Dynamic Tables support
 SELECT
@@ -38,7 +39,7 @@ SELECT
         ELSE '⚠ WARNING: Dynamic Tables require Snowflake 7.0+. Current: ' || CURRENT_VERSION()
     END AS version_check;
 
-SELECT 'Using database: ' || '&database_name' AS info;
+SELECT 'Using database: ' || $database_name AS info;
 
 -- ============================================================================
 -- 2. Create Dynamic Table: Real-Time Sensor Metrics (Last 15 Minutes)
@@ -412,15 +413,16 @@ SELECT 'Created analytics views from dynamic tables' AS result;
 SELECT '10. Granting Permissions...' AS step;
 
 USE ROLE ACCOUNTADMIN;
+USE WAREHOUSE SMDH_WH;
 
-SET admin_role_name = 'smdh_tenant_' || '&tenant_id' || '_admin';
-SET user_role_name = 'smdh_tenant_' || '&tenant_id' || '_user';
-SET readonly_role_name = 'smdh_tenant_' || '&tenant_id' || '_readonly';
+SET admin_role_name = 'smdh_tenant_' || $tenant_id || '_admin';
+SET user_role_name = 'smdh_tenant_' || $tenant_id || '_user';
+SET readonly_role_name = 'smdh_tenant_' || $tenant_id || '_readonly';
 
 -- Grant select on all dynamic tables
-GRANT SELECT ON ALL DYNAMIC TABLES IN SCHEMA smdh_tenant_${tenant_id}.aggregated TO ROLE IDENTIFIER(&admin_role_name);
-GRANT SELECT ON ALL DYNAMIC TABLES IN SCHEMA smdh_tenant_${tenant_id}.aggregated TO ROLE IDENTIFIER(&user_role_name);
-GRANT SELECT ON ALL DYNAMIC TABLES IN SCHEMA smdh_tenant_${tenant_id}.aggregated TO ROLE IDENTIFIER(&readonly_role_name);
+GRANT SELECT ON ALL DYNAMIC TABLES IN SCHEMA smdh_tenant_${tenant_id}.aggregated TO ROLE IDENTIFIER($admin_role_name);
+GRANT SELECT ON ALL DYNAMIC TABLES IN SCHEMA smdh_tenant_${tenant_id}.aggregated TO ROLE IDENTIFIER($user_role_name);
+GRANT SELECT ON ALL DYNAMIC TABLES IN SCHEMA smdh_tenant_${tenant_id}.aggregated TO ROLE IDENTIFIER($readonly_role_name);
 
 SELECT 'Granted dynamic table permissions' AS result;
 

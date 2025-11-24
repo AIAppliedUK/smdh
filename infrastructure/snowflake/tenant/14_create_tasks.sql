@@ -2,7 +2,7 @@
 -- SMDH Tenant Tasks Creation (ETL Automation)
 -- ============================================================================
 -- Purpose: Create automated tasks for data processing pipeline
--- Usage: snowsql -f tenant/14_create_tasks.sql -D tenant_id='company_a'
+-- Usage: snowsql -f tenant/14_create_tasks.sql --variable tenant_id='company_a'
 -- Author: SMDH Platform Team
 -- Version: 1.0
 -- ============================================================================
@@ -15,6 +15,7 @@
 -- ============================================================================
 
 USE ROLE ACCOUNTADMIN;
+USE WAREHOUSE SMDH_WH;
 
 -- Display banner
 SELECT '╔════════════════════════════════════════════════════════════════╗' AS banner
@@ -27,11 +28,11 @@ UNION ALL SELECT '╚═══════════════════�
 
 SELECT '1. Validating Tenant Database...' AS step;
 
-SET database_name = 'smdh_tenant_' || '&tenant_id';
+SET database_name = 'smdh_tenant_' || $tenant_id;
 
-USE DATABASE IDENTIFIER(&database_name);
+USE DATABASE IDENTIFIER($database_name);
 
-SELECT 'Using database: ' || '&database_name' AS info;
+SELECT 'Using database: ' || $database_name AS info;
 
 -- ============================================================================
 -- 2. Enable Task Execution for Database
@@ -113,7 +114,7 @@ INSERT INTO smdh_infrastructure.monitoring.task_execution_log (
     rows_processed
 )
 SELECT
-    &tenant_id,
+    $tenant_id,
     'task_normalize_sensor_readings',
     CURRENT_TIMESTAMP(),
     'success',
@@ -357,7 +358,7 @@ AS
 MERGE INTO smdh_infrastructure.tenant_configs.devices AS target
 USING (
     SELECT
-        &tenant_id AS tenant_id,
+        $tenant_id AS tenant_id,
         sensor_id AS device_id,
         MAX(timestamp) AS last_message_timestamp,
         COUNT(*) AS message_count
@@ -409,7 +410,7 @@ SELECT
     error_code,
     error_message
 FROM SNOWFLAKE.ACCOUNT_USAGE.TASK_HISTORY
-WHERE database_name = 'smdh_tenant_' || '&tenant_id'
+WHERE database_name = 'smdh_tenant_' || $tenant_id
     AND scheduled_time >= DATEADD(day, -7, CURRENT_TIMESTAMP())
 ORDER BY scheduled_time DESC;
 
@@ -488,16 +489,17 @@ SELECT 'All tasks started successfully' AS result;
 SELECT '11. Granting Task Permissions...' AS step;
 
 USE ROLE ACCOUNTADMIN;
+USE WAREHOUSE SMDH_WH;
 
-SET admin_role_name = 'smdh_tenant_' || '&tenant_id' || '_admin';
+SET admin_role_name = 'smdh_tenant_' || $tenant_id || '_admin';
 
 -- Grant task monitoring to admin role
-GRANT MONITOR ON ALL TASKS IN DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER(&admin_role_name);
-GRANT OPERATE ON ALL TASKS IN DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER(&admin_role_name);
+GRANT MONITOR ON ALL TASKS IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($admin_role_name);
+GRANT OPERATE ON ALL TASKS IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($admin_role_name);
 
 -- Grant procedure execution
-GRANT USAGE ON PROCEDURE smdh_tenant_${tenant_id}.analytics.sp_resume_all_tasks() TO ROLE IDENTIFIER(&admin_role_name);
-GRANT USAGE ON PROCEDURE smdh_tenant_${tenant_id}.analytics.sp_suspend_all_tasks() TO ROLE IDENTIFIER(&admin_role_name);
+GRANT USAGE ON PROCEDURE smdh_tenant_${tenant_id}.analytics.sp_resume_all_tasks() TO ROLE IDENTIFIER($admin_role_name);
+GRANT USAGE ON PROCEDURE smdh_tenant_${tenant_id}.analytics.sp_suspend_all_tasks() TO ROLE IDENTIFIER($admin_role_name);
 
 SELECT 'Granted task permissions' AS result;
 
@@ -508,7 +510,7 @@ SELECT 'Granted task permissions' AS result;
 SELECT '12. Verifying Task Creation...' AS step;
 
 -- Show all tasks
-USE DATABASE IDENTIFIER(&database_name);
+USE DATABASE IDENTIFIER($database_name);
 SHOW TASKS;
 
 -- Check task status

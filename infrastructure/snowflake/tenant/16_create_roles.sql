@@ -2,7 +2,7 @@
 -- SMDH Tenant RBAC Configuration (Additional Roles)
 -- ============================================================================
 -- Purpose: Create additional tenant-specific roles for fine-grained access control
--- Usage: snowsql -f tenant/16_create_roles.sql -D tenant_id='company_a'
+-- Usage: snowsql -f tenant/16_create_roles.sql --variable tenant_id='company_a'
 -- Author: SMDH Platform Team
 -- Version: 1.0
 -- ============================================================================
@@ -14,6 +14,7 @@
 -- ============================================================================
 
 USE ROLE ACCOUNTADMIN;
+USE WAREHOUSE SMDH_WH;
 
 -- Display banner
 SELECT '╔════════════════════════════════════════════════════════════════╗' AS banner
@@ -26,16 +27,16 @@ UNION ALL SELECT '╚═══════════════════�
 
 SELECT '1. Validating Tenant Database...' AS step;
 
-SET database_name = 'smdh_tenant_' || '&tenant_id';
-SET tenant_prefix = 'smdh_tenant_' || '&tenant_id';
+SET database_name = 'smdh_tenant_' || $tenant_id;
+SET tenant_prefix = 'smdh_tenant_' || $tenant_id;
 
-USE DATABASE IDENTIFIER(&database_name);
+USE DATABASE IDENTIFIER($database_name);
 
-SELECT 'Using database: ' || '&database_name' AS info;
+SELECT 'Using database: ' || $database_name AS info;
 
 -- Verify existing roles
 SELECT 'Existing tenant roles:' AS info;
-SHOW ROLES LIKE 'smdh_tenant_' || '&tenant_id' || '%';
+SHOW ROLES LIKE 'smdh_tenant_' || $tenant_id || '%';
 
 -- ============================================================================
 -- 2. Create Data Engineer Role
@@ -46,11 +47,11 @@ SELECT '2. Creating Data Engineer Role...' AS step;
 SET data_engineer_role = $tenant_prefix || '_data_engineer';
 
 CREATE ROLE IF NOT EXISTS IDENTIFIER($data_engineer_role)
-    COMMENT = CONCAT('Data Engineer role for tenant ', &tenant_id, '. Can create and modify ETL objects (streams, tasks, procedures).');
+    COMMENT = CONCAT('Data Engineer role for tenant ', $tenant_id, '. Can create and modify ETL objects (streams, tasks, procedures).');
 
 -- Grant database access
-GRANT USAGE ON DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER($data_engineer_role);
-GRANT USAGE ON ALL SCHEMAS IN DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER($data_engineer_role);
+GRANT USAGE ON DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($data_engineer_role);
+GRANT USAGE ON ALL SCHEMAS IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($data_engineer_role);
 
 -- Grant full access to RAW and NORMALIZED schemas (for ETL development)
 GRANT ALL ON SCHEMA smdh_tenant_${tenant_id}.raw TO ROLE IDENTIFIER($data_engineer_role);
@@ -61,10 +62,10 @@ GRANT ALL ON FUTURE TABLES IN SCHEMA smdh_tenant_${tenant_id}.raw TO ROLE IDENTI
 GRANT ALL ON FUTURE TABLES IN SCHEMA smdh_tenant_${tenant_id}.normalized TO ROLE IDENTIFIER($data_engineer_role);
 
 -- Grant stream and task management
-GRANT ALL ON ALL STREAMS IN DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER($data_engineer_role);
-GRANT ALL ON FUTURE STREAMS IN DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER($data_engineer_role);
-GRANT ALL ON ALL TASKS IN DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER($data_engineer_role);
-GRANT ALL ON FUTURE TASKS IN DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER($data_engineer_role);
+GRANT ALL ON ALL STREAMS IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($data_engineer_role);
+GRANT ALL ON FUTURE STREAMS IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($data_engineer_role);
+GRANT ALL ON ALL TASKS IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($data_engineer_role);
+GRANT ALL ON FUTURE TASKS IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($data_engineer_role);
 
 -- Grant read access to AGGREGATED and ANALYTICS (for validation)
 GRANT SELECT ON ALL TABLES IN SCHEMA smdh_tenant_${tenant_id}.aggregated TO ROLE IDENTIFIER($data_engineer_role);
@@ -88,11 +89,11 @@ SELECT '3. Creating Data Analyst Role...' AS step;
 SET data_analyst_role = $tenant_prefix || '_data_analyst';
 
 CREATE ROLE IF NOT EXISTS IDENTIFIER($data_analyst_role)
-    COMMENT = CONCAT('Data Analyst role for tenant ', &tenant_id, '. Read/write access to analytics objects only.');
+    COMMENT = CONCAT('Data Analyst role for tenant ', $tenant_id, '. Read/write access to analytics objects only.');
 
 -- Grant database access
-GRANT USAGE ON DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER($data_analyst_role);
-GRANT USAGE ON ALL SCHEMAS IN DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER($data_analyst_role);
+GRANT USAGE ON DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($data_analyst_role);
+GRANT USAGE ON ALL SCHEMAS IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($data_analyst_role);
 
 -- Grant read access to NORMALIZED and AGGREGATED
 GRANT SELECT ON ALL TABLES IN SCHEMA smdh_tenant_${tenant_id}.normalized TO ROLE IDENTIFIER($data_analyst_role);
@@ -124,18 +125,18 @@ SELECT '4. Creating API Service Account Role...' AS step;
 SET api_service_role = $tenant_prefix || '_api_service';
 
 CREATE ROLE IF NOT EXISTS IDENTIFIER($api_service_role)
-    COMMENT = CONCAT('API Service Account role for tenant ', &tenant_id, '. Programmatic read access for external applications.');
+    COMMENT = CONCAT('API Service Account role for tenant ', $tenant_id, '. Programmatic read access for external applications.');
 
 -- Grant database access
-GRANT USAGE ON DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER($api_service_role);
-GRANT USAGE ON ALL SCHEMAS IN DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER($api_service_role);
+GRANT USAGE ON DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($api_service_role);
+GRANT USAGE ON ALL SCHEMAS IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($api_service_role);
 
 -- Grant read-only access to all data schemas
-GRANT SELECT ON ALL TABLES IN DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER($api_service_role);
-GRANT SELECT ON ALL VIEWS IN DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER($api_service_role);
+GRANT SELECT ON ALL TABLES IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($api_service_role);
+GRANT SELECT ON ALL VIEWS IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($api_service_role);
 GRANT SELECT ON ALL DYNAMIC TABLES IN SCHEMA smdh_tenant_${tenant_id}.aggregated TO ROLE IDENTIFIER($api_service_role);
-GRANT SELECT ON FUTURE TABLES IN DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER($api_service_role);
-GRANT SELECT ON FUTURE VIEWS IN DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER($api_service_role);
+GRANT SELECT ON FUTURE TABLES IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($api_service_role);
+GRANT SELECT ON FUTURE VIEWS IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($api_service_role);
 
 -- Grant warehouse access (small warehouse for API queries)
 GRANT USAGE ON WAREHOUSE smdh_analytics_wh TO ROLE IDENTIFIER($api_service_role);
@@ -153,18 +154,18 @@ SELECT '5. Creating Auditor Role...' AS step;
 SET auditor_role = $tenant_prefix || '_auditor';
 
 CREATE ROLE IF NOT EXISTS IDENTIFIER($auditor_role)
-    COMMENT = CONCAT('Auditor role for tenant ', &tenant_id, '. Read-only access for compliance and audit purposes.');
+    COMMENT = CONCAT('Auditor role for tenant ', $tenant_id, '. Read-only access for compliance and audit purposes.');
 
 -- Grant database usage
-GRANT USAGE ON DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER($auditor_role);
-GRANT USAGE ON ALL SCHEMAS IN DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER($auditor_role);
+GRANT USAGE ON DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($auditor_role);
+GRANT USAGE ON ALL SCHEMAS IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($auditor_role);
 
 -- Grant read-only access to all objects
-GRANT SELECT ON ALL TABLES IN DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER($auditor_role);
-GRANT SELECT ON ALL VIEWS IN DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER($auditor_role);
+GRANT SELECT ON ALL TABLES IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($auditor_role);
+GRANT SELECT ON ALL VIEWS IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($auditor_role);
 GRANT SELECT ON ALL DYNAMIC TABLES IN SCHEMA smdh_tenant_${tenant_id}.aggregated TO ROLE IDENTIFIER($auditor_role);
-GRANT SELECT ON FUTURE TABLES IN DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER($auditor_role);
-GRANT SELECT ON FUTURE VIEWS IN DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER($auditor_role);
+GRANT SELECT ON FUTURE TABLES IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($auditor_role);
+GRANT SELECT ON FUTURE VIEWS IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($auditor_role);
 
 -- Grant access to audit logs in infrastructure database
 GRANT USAGE ON DATABASE smdh_infrastructure TO ROLE IDENTIFIER($auditor_role);
@@ -172,7 +173,7 @@ GRANT USAGE ON SCHEMA smdh_infrastructure.audit TO ROLE IDENTIFIER($auditor_role
 GRANT SELECT ON ALL TABLES IN SCHEMA smdh_infrastructure.audit TO ROLE IDENTIFIER($auditor_role);
 
 -- Grant monitoring access
-GRANT MONITOR ON DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER($auditor_role);
+GRANT MONITOR ON DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($auditor_role);
 GRANT MONITOR ON ALL WAREHOUSES IN ACCOUNT TO ROLE IDENTIFIER($auditor_role);
 
 -- Grant warehouse access
@@ -199,7 +200,7 @@ SELECT
     granted_by,
     created_on
 FROM SNOWFLAKE.ACCOUNT_USAGE.GRANTS_TO_ROLES
-WHERE grantee_name LIKE 'smdh_tenant_' || '&tenant_id' || '%'
+WHERE grantee_name LIKE 'smdh_tenant_' || $tenant_id || '%'
 ORDER BY grantee_name, object_type, object_name;
 
 SELECT 'Created view: V_ROLE_HIERARCHY' AS result;
@@ -236,17 +237,17 @@ BEGIN
     -- Determine full role name
     CASE :role_type_param
         WHEN 'admin' THEN
-            full_role_name := 'smdh_tenant_' || '&tenant_id' || '_admin';
+            full_role_name := 'smdh_tenant_' || $tenant_id || '_admin';
         WHEN 'user' THEN
-            full_role_name := 'smdh_tenant_' || '&tenant_id' || '_user';
+            full_role_name := 'smdh_tenant_' || $tenant_id || '_user';
         WHEN 'readonly' THEN
-            full_role_name := 'smdh_tenant_' || '&tenant_id' || '_readonly';
+            full_role_name := 'smdh_tenant_' || $tenant_id || '_readonly';
         WHEN 'data_engineer' THEN
-            full_role_name := 'smdh_tenant_' || '&tenant_id' || '_data_engineer';
+            full_role_name := 'smdh_tenant_' || $tenant_id || '_data_engineer';
         WHEN 'data_analyst' THEN
-            full_role_name := 'smdh_tenant_' || '&tenant_id' || '_data_analyst';
+            full_role_name := 'smdh_tenant_' || $tenant_id || '_data_analyst';
         WHEN 'auditor' THEN
-            full_role_name := 'smdh_tenant_' || '&tenant_id' || '_auditor';
+            full_role_name := 'smdh_tenant_' || $tenant_id || '_auditor';
         ELSE
             RETURN 'Error: Invalid role_type. Use: admin, user, readonly, data_engineer, data_analyst, or auditor';
     END CASE;
@@ -266,7 +267,7 @@ BEGIN
     INSERT INTO smdh_infrastructure.tenant_configs.tenant_users (
         tenant_id, username, email, role_name, is_active
     ) VALUES (
-        &tenant_id, :username_param, :email_param, :full_role_name, TRUE
+        $tenant_id, :username_param, :email_param, :full_role_name, TRUE
     );
 
     RETURN 'Successfully created user ' || :username_param || ' with role ' || :full_role_name;
@@ -287,25 +288,25 @@ SELECT '8. Documenting Roles...' AS step;
 MERGE INTO schema_documentation AS target
 USING (
     SELECT 'RBAC' AS schema_name, 'ROLE' AS object_type,
-           'smdh_tenant_' || '&tenant_id' || '_admin' AS object_name,
+           'smdh_tenant_' || $tenant_id || '_admin' AS object_name,
            'Full admin access to tenant database and objects' AS description
     UNION ALL
-    SELECT 'RBAC', 'ROLE', 'smdh_tenant_' || '&tenant_id' || '_user',
+    SELECT 'RBAC', 'ROLE', 'smdh_tenant_' || $tenant_id || '_user',
            'Standard user with read/write access to analytics'
     UNION ALL
-    SELECT 'RBAC', 'ROLE', 'smdh_tenant_' || '&tenant_id' || '_readonly',
+    SELECT 'RBAC', 'ROLE', 'smdh_tenant_' || $tenant_id || '_readonly',
            'Read-only access for reporting and dashboards'
     UNION ALL
-    SELECT 'RBAC', 'ROLE', 'smdh_tenant_' || '&tenant_id' || '_data_engineer',
+    SELECT 'RBAC', 'ROLE', 'smdh_tenant_' || $tenant_id || '_data_engineer',
            'ETL development access (streams, tasks, procedures)'
     UNION ALL
-    SELECT 'RBAC', 'ROLE', 'smdh_tenant_' || '&tenant_id' || '_data_analyst',
+    SELECT 'RBAC', 'ROLE', 'smdh_tenant_' || $tenant_id || '_data_analyst',
            'Analytics development access (create views, tables in analytics schema)'
     UNION ALL
-    SELECT 'RBAC', 'ROLE', 'smdh_tenant_' || '&tenant_id' || '_api_service',
+    SELECT 'RBAC', 'ROLE', 'smdh_tenant_' || $tenant_id || '_api_service',
            'Programmatic read-only access for external applications'
     UNION ALL
-    SELECT 'RBAC', 'ROLE', 'smdh_tenant_' || '&tenant_id' || '_auditor',
+    SELECT 'RBAC', 'ROLE', 'smdh_tenant_' || $tenant_id || '_auditor',
            'Compliance and audit read-only access'
 ) AS source
 ON target.schema_name = source.schema_name
@@ -324,7 +325,7 @@ SELECT 'Documented all roles' AS result;
 SELECT '9. Verifying Role Creation...' AS step;
 
 -- Show all tenant roles
-SHOW ROLES LIKE 'smdh_tenant_' || '&tenant_id' || '%';
+SHOW ROLES LIKE 'smdh_tenant_' || $tenant_id || '%';
 
 -- Query role hierarchy
 SELECT * FROM analytics.v_role_hierarchy LIMIT 20;
@@ -336,7 +337,7 @@ SELECT
     COUNT(*) AS privilege_count,
     COUNT(DISTINCT granted_on) AS object_type_count
 FROM SNOWFLAKE.ACCOUNT_USAGE.GRANTS_TO_ROLES
-WHERE grantee_name LIKE 'smdh_tenant_' || '&tenant_id' || '%'
+WHERE grantee_name LIKE 'smdh_tenant_' || $tenant_id || '%'
 GROUP BY grantee_name
 ORDER BY grantee_name;
 
@@ -348,7 +349,7 @@ SELECT '╔═══════════════════════
 UNION ALL SELECT '║  Additional RBAC Configuration Complete                    ║'
 UNION ALL SELECT '╚════════════════════════════════════════════════════════════╝'
 UNION ALL SELECT ''
-UNION ALL SELECT 'Tenant: ' || '&tenant_id'
+UNION ALL SELECT 'Tenant: ' || $tenant_id
 UNION ALL SELECT ''
 UNION ALL SELECT 'All Roles Created:'
 UNION ALL SELECT '  ✓ _admin (full access)'
@@ -382,7 +383,7 @@ UNION ALL SELECT '  );'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Querying Roles:'
 UNION ALL SELECT '  SELECT * FROM analytics.v_role_hierarchy;'
-UNION ALL SELECT '  SHOW GRANTS TO ROLE smdh_tenant_' || '&tenant_id' || '_data_analyst;'
+UNION ALL SELECT '  SHOW GRANTS TO ROLE smdh_tenant_' || $tenant_id || '_data_analyst;'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Next Steps:'
 UNION ALL SELECT '  1. Run 17_create_monitoring.sql for monitoring dashboards'

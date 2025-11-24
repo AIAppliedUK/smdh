@@ -1,0 +1,81 @@
+# SMDH Production Environment Configuration
+# Copy this file to terraform.tfvars and update with your values
+
+# AWS Configuration
+aws_region  = "eu-west-2"
+environment = "prod"
+
+# Project Settings
+project_name = "smdh"
+
+# ========================================
+# MANDATORY TAGS (Required for deployment)
+# ========================================
+
+owner       = "Platform-Team"        # Team or individual responsible
+cost_center = "OPS-001"              # Billing allocation code
+deployed_by = "ops-team@company.com" # Who deployed this
+
+# ========================================
+# Compliance and Classification
+# ========================================
+
+data_classification    = "Internal"  # Public, Internal, Confidential, Restricted
+compliance_requirement = "GDPR"      # GDPR, ISO27001, etc.
+backup_policy         = "Daily"      # None, Daily, Weekly, Monthly
+
+# ========================================
+# Business and Operational
+# ========================================
+
+business_unit    = "Operations"
+application_name = "SMDH"
+service_tier     = "Critical"  # Critical, High, Medium, Low
+
+# Logging and Retention
+log_retention_days       = 90   # Standard retention for production
+kinesis_retention_hours  = 168  # 7 days retention for production
+
+# Snowflake Configuration
+# IMPORTANT: Get these from Snowflake support or documentation
+snowflake_account_id   = ""  # AWS account ID that Snowflake uses for your region
+snowflake_external_id  = ""  # Generate a secure random string (e.g., UUID)
+snowflake_region       = "eu-west-2"
+
+# Alerting
+alert_email = "ops-team@yourcompany.com"
+
+# Monitoring
+enable_monitoring          = true
+enable_deletion_protection = true  # Prevent accidental deletion
+certificate_expiry_warning_days = 30
+
+# Tenants - Production tenant configuration
+# Add tenants as needed following this structure
+tenants = {
+  company_a = {
+    name             = "Company A Manufacturing Ltd"
+    num_sites        = 5
+    retention_days   = 730  # 2 years
+    warehouse_size   = "SMALL"
+    contact_email    = "alerts@companya.com"
+    sensors_per_site = 10
+  }
+
+  # company_b = {
+  #   name             = "Company B Industries"
+  #   num_sites        = 3
+  #   retention_days   = 730
+  #   warehouse_size   = "SMALL"
+  #   contact_email    = "ops@companyb.com"
+  #   sensors_per_site = 8
+  # }
+}
+
+# Additional Tags
+tags = {
+  CostCenter  = "Operations"
+  Owner       = "Platform Team"
+  Environment = "Production"
+  Compliance  = "Required"
+}

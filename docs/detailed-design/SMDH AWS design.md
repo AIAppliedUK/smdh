@@ -110,6 +110,68 @@ Buffers and orders streaming data between IoT Core and Snowflake. Provides tempo
 
 Required when using IoT Core for MQTT ingestion. Optional for HTTP if buffering is needed.
 
+#### 3.1.3 AWS IoT Thing Groups (Device Organization)
+
+Provides hierarchical device management and organization across tenants and sites. Thing Groups enable bulk operations, cost tracking, health monitoring, and logical grouping of devices without requiring database queries.
+
+**Capabilities:**
+
+- **Hierarchical Structure**: Parent-child relationships for tenant → sites → devices organization
+- **Static Groups**: Manually managed groups for organizational structure (tenant-level, site-level)
+- **Dynamic Groups**: Query-based groups that automatically track device states (disconnected, active)
+- **Bulk Operations**: Apply updates, configurations, or queries to all devices in a group
+- **Cost Allocation**: Tag-based cost tracking at tenant and site level
+- **Fleet Indexing**: Search and query devices across groups with AWS IoT Fleet Indexing
+
+**SMDH Thing Group Hierarchy:**
+
+```
+Tenant Thing Group (smdh-tenant-{tenant_id})
+├── Site Thing Group (smdh-{tenant_id}-site_001)
+│   ├── Gateway: smdh-gateway-{tenant_id}-site_001-gw_001
+│   ├── Gateway: smdh-gateway-{tenant_id}-site_001-gw_002
+│   └── ... (additional gateways per site)
+├── Site Thing Group (smdh-{tenant_id}-site_002)
+│   └── Gateway: smdh-gateway-{tenant_id}-site_002-gw_001
+├── Dynamic Group: smdh-{tenant_id}-disconnected (auto-tracks offline devices)
+└── Dynamic Group: smdh-{tenant_id}-active (auto-tracks active devices)
+```
+
+**Why Thing Groups are needed:**
+
+- **Simplified Operations**: Query all devices for a tenant with a single recursive command instead of database queries
+- **Site-Level Management**: Apply firmware updates or configuration changes to all devices at a specific site
+- **Health Monitoring**: Automatically track disconnected or problematic devices via dynamic groups
+- **Organizational Clarity**: Mirror the business structure (tenant → sites → devices) in AWS IoT
+- **Cost Visibility**: Tag thing groups to track IoT costs per tenant and per site
+- **Snowflake Integration**: Sync thing group hierarchy to Snowflake infrastructure tables for unified device management
+
+**Key Operations Enabled:**
+
+```bash
+# List all devices for a tenant (recursive includes all site groups)
+aws iot list-things-in-thing-group \
+  --thing-group-name "smdh-tenant-company_a" \
+  --recursive --region eu-west-2
+
+# List devices at a specific site
+aws iot list-things-in-thing-group \
+  --thing-group-name "smdh-company_a-site_001" \
+  --region eu-west-2
+
+# Check disconnected devices (uses dynamic group)
+aws iot list-things-in-thing-group \
+  --thing-group-name "smdh-company_a-disconnected" \
+  --region eu-west-2
+```
+
+**Traceability:**
+
+- FR-004: Supports multi-tenant device isolation and organization
+- FR-005: Enables efficient device connection state monitoring
+- NFR-001: Scales to support 300+ devices across 30 tenants
+- NFR-005: Reduces operational overhead for device management
+
 ### 3.2 IoT Rules Engine
 
 Routes and filters MQTT messages from IoT Core to Kinesis. Implements multi-tenant routing and error handling without custom code.
@@ -279,6 +341,7 @@ Centralised monitoring and logging for all AWS services. Collects metrics, store
 | Layer                 | Isolation Method                              | Rationale                                          |
 | --------------------- | --------------------------------------------- | -------------------------------------------------- |
 | **Device Level**      | Separate X.509 certificates per gateway       | Prevents device spoofing, enables revocation       |
+| **Thing Group Level** | Hierarchical thing groups per tenant/site     | Organizational isolation, bulk operations per tenant |
 | **Topic Level**       | Topic ACLs enforce `smdh/{tenant_id}/*` path  | Prevents cross-tenant topic access at IoT Core    |
 | **Rules Level**       | IoT Rules extract tenant from topic            | Validates tenant context before Kinesis routing    |
 | **Partition Level**   | Kinesis partitioned by {tenant_id}             | In-order delivery, isolation per tenant            |
@@ -556,6 +619,8 @@ All SMDH AWS components are **fully managed services** that don't require VPC ho
 | Metric                    | Source         | Target    | Threshold                |
 | ------------------------- | -------------- | --------- | ------------------------ |
 | **IoT Connections**       | CloudWatch     | Dashboard | Track active gateways     |
+| **Thing Group Device Count** | AWS IoT     | Dashboard | Track devices per tenant/site |
+| **Disconnected Devices**  | Dynamic Thing Group | Alarm | >0 devices in disconnected group |
 | **MQTT Messages**         | CloudWatch     | Dashboard | Should be ~86K/sec peak   |
 | **Message Processing**    | CloudWatch     | Dashboard | <100ms latency           |
 | **Connection Errors**     | CloudWatch     | Alarm     | >5 failures in 5 min     |
@@ -575,8 +640,17 @@ All SMDH AWS components are **fully managed services** that don't require VPC ho
 
 - **CloudWatch Dashboards**: Real-time AWS metrics
 - **CloudWatch Alarms**: SNS notifications for issues
+- **Thing Group Queries**: Regular polling of dynamic groups for disconnected devices
+  ```bash
+  # Check disconnected devices for all tenants
+  for tenant in company_a company_b company_c; do
+    aws iot list-things-in-thing-group \
+      --thing-group-name "smdh-${tenant}-disconnected" \
+      --region eu-west-2
+  done
+  ```
 - **Snowflake System Views**: Query ingestion_metrics
-- **Automated Reports**: Daily health check summaries
+- **Automated Reports**: Daily health check summaries leveraging thing group data
 
 ### 10.2 Alerting Strategy
 
@@ -652,6 +726,7 @@ The architecture supports future changes through:
 | **Web Framework**          | Streamlit in Snowflake   | React + ECS            | Faster development, no separate infrastructure |
 | **Multi-tenancy**          | Database-per-tenant      | Row-level security     | Stronger isolation, simpler operations         |
 | **Device Authentication**  | X.509 certificates       | Pre-shared keys        | Can be revoked, non-repudiation                |
+| **Device Organization**    | AWS IoT Thing Groups     | Custom database tables | Native AWS feature, enables bulk operations, automatic hierarchy |
 | **Network Design**         | No VPC (managed only)    | Custom VPC             | Simpler, IoT needs internet-facing endpoint    |
 | **Regional Deployment**    | Single region (eu-west-2) | Multi-region          | Cost-effective, compliance, gateway proximity  |
 
@@ -711,7 +786,40 @@ API Key: smdh-prod-company-a-{random}
 
 #### Phase 2: AWS IoT Configuration (for MQTT devices)
 
-**Step 2.1: Create IoT Thing Registry**
+**Step 2.1: Create Thing Groups Hierarchy**
+
+```
+Component: AWS IoT Thing Groups
+Purpose: Organize devices hierarchically for management and monitoring
+
+Create tenant-level thing group:
+- Name: smdh-tenant-company_a
+- Description: "All IoT devices for tenant: Company A Manufacturing Ltd"
+- Attributes:
+  - tenant_id: company_a
+  - tenant_name: Company_A_Manufacturing_Ltd
+  - managed_by: terraform
+
+Create site-level thing groups (one per site):
+- Name: smdh-company_a-site_001
+- Parent: smdh-tenant-company_a
+- Description: "IoT devices at Company A - site_001"
+- Attributes:
+  - tenant_id: company_a
+  - site_id: site_001
+  - managed_by: terraform
+
+Create dynamic thing groups (auto-tracking):
+- Name: smdh-company_a-disconnected
+- Query: attributes.tenant_id:company_a AND connectivity.connected:false
+- Purpose: Automatically track disconnected devices for alerting
+
+- Name: smdh-company_a-active
+- Query: attributes.tenant_id:company_a AND connectivity.connected:true AND connectivity.timestamp > ${timestamp - 300000}
+- Purpose: Track recently active devices for health monitoring
+```
+
+**Step 2.2: Create IoT Thing Registry**
 
 ```
 Component: AWS IoT Core
@@ -720,6 +828,7 @@ Purpose: Register tenant's gateways and devices
 For each gateway:
 - Thing Name: smdh-gateway-company-a-site-001
 - Thing Type: LoRaWANGateway
+- Thing Groups: Add to smdh-company_a-site_001 (automatic parent inheritance)
 - Attributes:
   - tenant_id: company_a
   - site_id: site-001
@@ -727,7 +836,7 @@ For each gateway:
   - deployment_date: "2024-11-13"
 ```
 
-**Step 2.2: Generate X.509 Certificates**
+**Step 2.3: Generate X.509 Certificates**
 
 ```
 Component: AWS IoT Core Certificates
@@ -741,7 +850,7 @@ Per gateway certificate:
 - Auto-rotation reminder: 30 days before expiry
 ```
 
-**Step 2.3: Create IoT Policy**
+**Step 2.4: Create IoT Policy**
 
 ```
 Component: AWS IoT Policies
@@ -757,7 +866,7 @@ Permissions:
 Critical: No cross-tenant topic access
 ```
 
-**Step 2.4: Configure IoT Rules**
+**Step 2.5: Configure IoT Rules**
 
 ```
 Component: AWS IoT Rules Engine
@@ -770,6 +879,38 @@ SQL: SELECT *, 'company_a' as tenant_id
 Action:
 - Kinesis: Put to partition key 'company_a'
 - Error Action: Republish to smdh/company_a/errors
+```
+
+**Step 2.6: Verify Thing Group Configuration**
+
+```
+Component: AWS IoT Thing Groups
+Purpose: Validate hierarchy and device memberships
+
+Verification commands:
+# View thing group hierarchy
+aws iot describe-thing-group --thing-group-name smdh-tenant-company_a
+
+# List all devices for tenant (recursive)
+aws iot list-things-in-thing-group \
+  --thing-group-name smdh-tenant-company_a \
+  --recursive --region eu-west-2
+
+# List devices at specific site
+aws iot list-things-in-thing-group \
+  --thing-group-name smdh-company_a-site_001 \
+  --region eu-west-2
+
+# Check dynamic group for disconnected devices (should be empty initially)
+aws iot list-things-in-thing-group \
+  --thing-group-name smdh-company_a-disconnected \
+  --region eu-west-2
+
+Expected Results:
+- Tenant group contains all site groups as children
+- Site groups contain only devices for that site
+- Devices automatically inherit tenant group membership
+- Dynamic groups are empty until devices connect/disconnect
 ```
 
 #### Phase 3: Snowflake Configuration
@@ -821,7 +962,51 @@ CREATE TABLE smdh_tenant_company_a.raw.uploaded_files (...);
 CREATE TABLE smdh_tenant_company_a.raw.api_events (...);
 ```
 
-**Step 3.3: Setup Streaming Objects**
+**Step 3.3: Sync AWS IoT Metadata to Snowflake Infrastructure**
+
+```sql
+Component: Snowflake Infrastructure Schema (smdh_infrastructure.tenant_configs)
+Purpose: Mirror AWS IoT Thing Group hierarchy for unified device management
+
+-- This is done in the central infrastructure database, not per-tenant
+
+-- Update tenant record with thing group information
+UPDATE smdh_infrastructure.tenant_configs.tenants
+SET
+  tenant_thing_group_name = 'smdh-tenant-company_a',
+  tenant_thing_group_arn = 'arn:aws:iot:eu-west-2:123456789012:thinggroup/smdh-tenant-company_a',
+  last_sync_timestamp = CURRENT_TIMESTAMP()
+WHERE tenant_id = 'company_a';
+
+-- Add site thing group information
+UPDATE smdh_infrastructure.tenant_configs.sites
+SET
+  site_thing_group_name = 'smdh-company_a-site_001',
+  site_thing_group_arn = 'arn:aws:iot:eu-west-2:123456789012:thinggroup/smdh-company_a-site_001',
+  last_device_sync = CURRENT_TIMESTAMP()
+WHERE tenant_id = 'company_a' AND site_id = 'site_001';
+
+-- Add device thing group memberships
+UPDATE smdh_infrastructure.tenant_configs.devices
+SET
+  site_thing_group_name = 'smdh-company_a-site_001',
+  tenant_thing_group_name = 'smdh-tenant-company_a',
+  thing_group_memberships = ARRAY_CONSTRUCT('smdh-company_a-site_001', 'smdh-tenant-company_a'),
+  last_sync_timestamp = CURRENT_TIMESTAMP()
+WHERE device_id = 'smdh-gateway-company-a-site-001-gw-001';
+
+-- Verify thing group hierarchy view
+SELECT * FROM smdh_infrastructure.monitoring.v_thing_group_hierarchy
+WHERE tenant_id = 'company_a';
+
+Benefits of this sync:
+- Unified view of AWS IoT device hierarchy in Snowflake
+- Enable SQL queries across device organization
+- Support for analytics on device groups (e.g., "average uptime per site")
+- Integration point for monitoring and alerting dashboards
+```
+
+**Step 3.4: Setup Streaming Objects**
 
 ```sql
 Component: Snowflake Streams & Tasks
@@ -845,7 +1030,7 @@ AS
 ALTER TASK process_sensor_data RESUME;
 ```
 
-**Step 3.4: Create Roles and Users**
+**Step 3.5: Create Roles and Users**
 
 ```sql
 Component: Snowflake RBAC
@@ -875,7 +1060,7 @@ CREATE USER john_smith_company_a
 GRANT ROLE tenant_company_a_user TO USER john_smith_company_a;
 ```
 
-**Step 3.5: Configure Dynamic Tables**
+**Step 3.6: Configure Dynamic Tables**
 
 ```sql
 Component: Snowflake Dynamic Tables
@@ -1010,6 +1195,9 @@ Configuration:
 | Test                      | Description                                 | Expected Result                         |
 | ------------------------- | ------------------------------------------- | --------------------------------------- |
 | **MQTT Connection**       | Gateway connects to IoT Core with X.509     | Connection successful, no auth errors   |
+| **Thing Group Hierarchy** | Query tenant thing group recursively        | Returns all devices across all sites    |
+| **Site Thing Group**      | Query site thing group                      | Returns only devices for that site      |
+| **Dynamic Group**         | Check disconnected devices dynamic group    | Empty initially, updates when device disconnects |
 | **Message Ingestion**     | Send test message from gateway              | Message appears in Snowflake within 30s |
 | **Tenant Topic ACLs**     | Try to publish to another tenant's topic    | Access denied (403 error)               |
 | **DevTank Wi-Fi**         | Connect DevTank OSM via Wi-Fi               | Connects, sends data to IoT Core        |
@@ -1032,7 +1220,35 @@ SNOWFLAKE_ACCOUNT="your-account"
 
 echo "Starting tenant onboarding for $TENANT_ID..."
 
-# 1. AWS IoT Setup
+# 1. Create Thing Group Hierarchy
+echo "Creating thing group hierarchy..."
+
+# Tenant-level thing group
+aws iot create-thing-group \
+  --thing-group-name "smdh-tenant-${TENANT_ID}" \
+  --thing-group-properties "attributePayload={attributes={tenant_id=${TENANT_ID},managed_by=terraform}}" \
+  --region $AWS_REGION
+
+# Site-level thing group (assuming site_001)
+aws iot create-thing-group \
+  --thing-group-name "smdh-${TENANT_ID}-site_001" \
+  --parent-group-name "smdh-tenant-${TENANT_ID}" \
+  --thing-group-properties "attributePayload={attributes={tenant_id=${TENANT_ID},site_id=site_001,managed_by=terraform}}" \
+  --region $AWS_REGION
+
+# Dynamic thing group for disconnected devices
+aws iot create-dynamic-thing-group \
+  --thing-group-name "smdh-${TENANT_ID}-disconnected" \
+  --query-string "attributes.tenant_id:${TENANT_ID} AND connectivity.connected:false" \
+  --region $AWS_REGION
+
+# Dynamic thing group for active devices
+aws iot create-dynamic-thing-group \
+  --thing-group-name "smdh-${TENANT_ID}-active" \
+  --query-string "attributes.tenant_id:${TENANT_ID} AND connectivity.connected:true" \
+  --region $AWS_REGION
+
+# 2. AWS IoT Setup
 echo "Creating IoT resources..."
 aws iot create-thing-type --thing-type-name "LoRaWANGateway" --region $AWS_REGION
 aws iot create-thing --thing-name "smdh-gateway-${TENANT_ID}-site-001" \
@@ -1040,13 +1256,19 @@ aws iot create-thing --thing-name "smdh-gateway-${TENANT_ID}-site-001" \
   --attribute-payload "{\"tenant_id\":\"${TENANT_ID}\"}" \
   --region $AWS_REGION
 
-# 2. Generate certificates
+# Add thing to site thing group
+aws iot add-thing-to-thing-group \
+  --thing-name "smdh-gateway-${TENANT_ID}-site-001" \
+  --thing-group-name "smdh-${TENANT_ID}-site_001" \
+  --region $AWS_REGION
+
+# 3. Generate certificates
 CERT_ARN=$(aws iot create-keys-and-certificate --set-as-active \
   --certificate-pem-outfile ${TENANT_ID}-cert.pem \
   --private-key-outfile ${TENANT_ID}-private.key \
   --query 'certificateArn' --output text --region $AWS_REGION)
 
-# 3. Create and attach policy
+# 4. Create and attach policy
 aws iot create-policy --policy-name "smdh-policy-${TENANT_ID}" \
   --policy-document file://templates/iot-policy-template.json \
   --region $AWS_REGION
@@ -1054,12 +1276,29 @@ aws iot create-policy --policy-name "smdh-policy-${TENANT_ID}" \
 aws iot attach-policy --policy-name "smdh-policy-${TENANT_ID}" \
   --target $CERT_ARN --region $AWS_REGION
 
-# 4. Snowflake setup (via SnowSQL)
+# 5. Snowflake setup (via SnowSQL)
 snowsql -a $SNOWFLAKE_ACCOUNT -u admin_user -f templates/create_tenant_database.sql \
   --variable tenant_id=$TENANT_ID \
   --variable tenant_name="$TENANT_NAME"
 
+# 6. Sync thing group metadata to Snowflake
+echo "Syncing AWS IoT metadata to Snowflake..."
+TENANT_THING_GROUP_ARN=$(aws iot describe-thing-group \
+  --thing-group-name "smdh-tenant-${TENANT_ID}" \
+  --query 'thingGroupArn' --output text --region $AWS_REGION)
+
+snowsql -a $SNOWFLAKE_ACCOUNT -u admin_user -q "
+UPDATE smdh_infrastructure.tenant_configs.tenants
+SET tenant_thing_group_name = 'smdh-tenant-${TENANT_ID}',
+    tenant_thing_group_arn = '${TENANT_THING_GROUP_ARN}',
+    last_sync_timestamp = CURRENT_TIMESTAMP()
+WHERE tenant_id = '${TENANT_ID}';"
+
 echo "Tenant onboarding complete for $TENANT_ID"
+echo ""
+echo "Verification commands:"
+echo "  aws iot list-things-in-thing-group --thing-group-name smdh-tenant-${TENANT_ID} --recursive --region ${AWS_REGION}"
+echo "  aws iot describe-thing-group --thing-group-name smdh-tenant-${TENANT_ID} --region ${AWS_REGION}"
 ```
 
 ### 13.6 Rollback Procedures
@@ -1116,12 +1355,21 @@ The SMDH AWS architecture achieves simplicity through focus:
 - **Single Protocol**: MQTT native for all sensor data (no HTTP conversion)
 - **Managed Services**: IoT Core, Kinesis, CloudWatch eliminate ops overhead
 - **Clear Isolation**: Multi-layer tenant isolation from device to database
-- **Operational Focus**: Comprehensive monitoring, alerting, and certificate management
+- **Hierarchical Organization**: AWS IoT Thing Groups mirror business structure (tenant → sites → devices)
+- **Operational Excellence**: Comprehensive monitoring, alerting, certificate management, and bulk device operations
 - **Cost Effective**: Serverless on-demand pricing, no idle resources
 
 By standardizing on MQTT and using AWS managed services, we eliminate custom validation layers, reduce latency, and minimize operational complexity. The architecture is designed to scale smoothly as tenant count grows from 5 to 30+ customers.
 
-The AWS layer is intentionally minimal and focused—just four core services (IoT Core, Kinesis, Secrets Manager, CloudWatch) orchestrate all sensor data ingestion. Snowflake handles all data processing, analytics, and user-facing applications.
+The AWS layer is intentionally minimal and focused—just four core services (IoT Core, Kinesis, Secrets Manager, CloudWatch) orchestrate all sensor data ingestion. AWS IoT Thing Groups provide native device organization that eliminates the need for custom management layers. Snowflake handles all data processing, analytics, and user-facing applications, with infrastructure tables mirroring the AWS IoT hierarchy for unified device management.
+
+**Key Benefits of Thing Groups Integration:**
+
+- **Simplified Operations**: Query all devices for a tenant with a single recursive AWS CLI command
+- **Site-Level Management**: Apply firmware updates or configuration changes to entire sites
+- **Automated Health Tracking**: Dynamic groups automatically identify disconnected or active devices
+- **Unified View**: Snowflake infrastructure tables mirror AWS Thing Group hierarchy for cross-platform queries
+- **Cost Visibility**: Thing group tags enable per-tenant and per-site cost tracking
 
 ---
 
@@ -1130,6 +1378,8 @@ The AWS layer is intentionally minimal and focused—just four core services (Io
 | Business Requirement        | Technical Component        | AWS Service           | Status      |
 | --------------------------- | -------------------------- | --------------------- | ----------- |
 | Receive MQTT sensor data    | MQTT broker + Rules Engine | IoT Core + IoT Rules  | **Active**  |
+| Organize devices by tenant/site | Hierarchical device groups | IoT Thing Groups | **Active** |
+| Track device health         | Dynamic device queries     | Dynamic Thing Groups  | **Active**  |
 | Buffer streaming data       | Message queue              | Kinesis               | **Active**  |
 | Store sensor data           | Data warehouse             | Snowflake (external)  | **Active**  |
 | Upload files                | Web portal                 | Streamlit (Snowflake) | **Active**  |
@@ -1156,6 +1406,8 @@ The AWS layer is intentionally minimal and focused—just four core services (Io
 | ------------------ | ---------------------------------------------------------------- |
 | **MQTT**           | Message Queuing Telemetry Transport - IoT communication protocol |
 | **LoRaWAN**        | Long Range Wide Area Network - IoT radio protocol                |
+| **Thing Groups**   | AWS IoT feature for hierarchical device organization and management |
+| **Dynamic Thing Groups** | AWS IoT query-based groups that auto-update based on device attributes |
 | **JWT**            | JSON Web Token - Authentication token format                     |
 | **CDC**            | Change Data Capture - Tracking data modifications                |
 | **VARIANT**        | Snowflake data type for semi-structured data                     |

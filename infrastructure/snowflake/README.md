@@ -116,6 +116,132 @@ export AWS_REGION="eu-west-2"
 
 ---
 
+## 🚨 Critical: Snowflake Variable Naming Convention
+
+**This is a common source of errors. Read carefully.**
+
+### Two Variable Systems
+
+Our setup uses **Snowflake's native variable system** (`$variable_name`), NOT SnowSQL's text-replacement system (`&variable_name`).
+
+| Aspect | SnowSQL Text Substitution | Snowflake Session Variables |
+|--------|-------------------------|---------------------------|
+| **Syntax** | `&variable_name` | `$variable_name` |
+| **When set** | Before executing SQL (command line) | During SQL execution |
+| **How it works** | Text replacement (literal substitution) | SQL parameter binding |
+| **Best for** | Simple placeholder replacement | Complex SQL with proper typing |
+| **Used in** | Legacy scripts, simple templates | Modern Snowflake scripts (OUR STANDARD) |
+
+### ❌ WRONG: Old SnowSQL Syntax
+```bash
+# ❌ DO NOT USE THIS
+snowsql -r ACCOUNTADMIN -f script.sql -D tenant_id='my_tenant'
+```
+
+In the SQL script:
+```sql
+-- ❌ WRONG - DO NOT DO THIS
+SET database_name = 'smdh_tenant_' || '&tenant_id';  -- Syntax error!
+WHERE tenant_id = '&tenant_id';                       -- Literal '&tenant_id' string!
+```
+
+### ✅ CORRECT: Snowflake Native Syntax
+```bash
+# ✅ USE THIS
+snowsql -r ACCOUNTADMIN -f script.sql --variable tenant_id='my_tenant'
+```
+
+In the SQL script:
+```sql
+-- ✅ CORRECT
+SET database_name = 'smdh_tenant_' || $tenant_id;  -- Proper variable concat
+WHERE tenant_id = $tenant_id;                       -- Actual value substitution
+```
+
+### Key Differences
+
+**SnowSQL `-D` flag (text replacement):**
+- Replaces `&variable_name` with literal text BEFORE Snowflake sees the SQL
+- Cannot be used inside expressions like `'&var'` safely
+- Causes syntax errors with characters like `||`, `&`, `{`, etc.
+- ❌ **DO NOT USE IN THIS PROJECT**
+
+**Snowflake `--variable` flag (native):**
+- Passes variable as a parameter to Snowflake engine
+- Works correctly in expressions: `'prefix_' || $var || '_suffix'`
+- Type-safe and properly quoted
+- ✅ **USE THIS STANDARD**
+
+### Common Pitfalls
+
+#### 1. Quoted Variable in String (❌ WRONG)
+```sql
+-- ❌ This will cause syntax errors
+SELECT 'Hello &tenant_id' AS message;
+INSERT INTO table VALUES ('&value1', &value2);
+SET db_name = 'smdh_' || '&tenant_id';
+```
+
+#### 2. Variable in WHERE Clause (❌ WRONG)
+```sql
+-- ❌ This will fail
+WHERE tenant_id = '&tenant_id';
+WHERE status IN ('&status1', '&status2');
+```
+
+#### 3. Correct Pattern (✅ RIGHT)
+```sql
+-- ✅ Always use $ syntax with --variable flag
+SELECT 'Hello ' || $tenant_id AS message;
+INSERT INTO table VALUES ($value1, $value2);
+SET db_name = 'smdh_' || $tenant_id;
+WHERE tenant_id = $tenant_id;
+WHERE status IN ($status1, $status2);
+```
+
+### Implementation Checklist
+
+When creating new Snowflake scripts:
+
+- [ ] **Usage comment** shows `--variable` flag (NOT `-D`)
+  ```bash
+  # Usage: snowsql -f script.sql --variable tenant_id='value'
+  ```
+
+- [ ] **All variables** use `$variable_name` syntax (NOT `&variable_name`)
+  ```sql
+  SET var = $my_variable;
+  WHERE id = $my_variable;
+  SELECT $my_variable || 'suffix';
+  ```
+
+- [ ] **No quoted variables** like `'$var'` - variables aren't strings
+  ```sql
+  -- ❌ WRONG
+  WHERE id = '$tenant_id'
+
+  -- ✅ CORRECT
+  WHERE id = $tenant_id
+  ```
+
+- [ ] **Test script** with actual values to verify proper substitution
+
+### Why This Matters
+
+**200+ syntax errors appeared** when old scripts used `&variable_name` with `-D flags`:
+- Snowflake received literal `&` characters in SQL
+- Ampersands triggered compiler errors
+- String concatenation failed
+- All subsequent operations failed
+
+**Fixed by converting to `$variable_name` with `--variable` flags:**
+- All setup scripts now execute successfully
+- Variables properly typed and substituted
+- String concatenation works correctly
+- Full automation achievable
+
+---
+
 ## Quick Start - Automated Setup
 
 **NEW:** Use the automated validation script for a complete, reproducible setup:

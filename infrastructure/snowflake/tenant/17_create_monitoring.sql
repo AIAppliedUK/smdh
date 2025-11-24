@@ -2,7 +2,7 @@
 -- SMDH Tenant Monitoring Setup
 -- ============================================================================
 -- Purpose: Create comprehensive monitoring views and dashboards for tenant
--- Usage: snowsql -f tenant/17_create_monitoring.sql -D tenant_id='company_a'
+-- Usage: snowsql -f tenant/17_create_monitoring.sql --variable tenant_id='company_a'
 -- Author: SMDH Platform Team
 -- Version: 1.0
 -- ============================================================================
@@ -15,6 +15,7 @@
 -- ============================================================================
 
 USE ROLE ACCOUNTADMIN;
+USE WAREHOUSE SMDH_WH;
 
 -- Display banner
 SELECT '╔════════════════════════════════════════════════════════════════╗' AS banner
@@ -27,12 +28,12 @@ UNION ALL SELECT '╚═══════════════════�
 
 SELECT '1. Validating Tenant Database...' AS step;
 
-SET database_name = 'smdh_tenant_' || '&tenant_id';
+SET database_name = 'smdh_tenant_' || $tenant_id;
 
-USE DATABASE IDENTIFIER(&database_name);
+USE DATABASE IDENTIFIER($database_name);
 USE SCHEMA analytics;
 
-SELECT 'Using database: ' || '&database_name' AS info;
+SELECT 'Using database: ' || $database_name AS info;
 
 -- ============================================================================
 -- 2. Create Data Ingestion Monitoring View
@@ -97,7 +98,7 @@ SELECT
     last_altered,
     DATEDIFF(day, last_altered, CURRENT_TIMESTAMP()) AS days_since_modified
 FROM smdh_tenant_${tenant_id}.INFORMATION_SCHEMA.TABLE_STORAGE_METRICS
-WHERE table_catalog = 'smdh_tenant_' || '&tenant_id'
+WHERE table_catalog = 'smdh_tenant_' || $tenant_id
 ORDER BY bytes DESC;
 
 GRANT SELECT ON v_storage_monitoring TO ROLE smdh_monitoring;
@@ -131,7 +132,7 @@ SELECT
     execution_time / 1000 AS execution_only_seconds,
     queued_provisioning_time / 1000 AS queue_seconds
 FROM SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY
-WHERE database_name = 'smdh_tenant_' || '&tenant_id'
+WHERE database_name = 'smdh_tenant_' || $tenant_id
     AND start_time >= DATEADD(day, -7, CURRENT_TIMESTAMP())
     AND execution_status = 'SUCCESS'
 ORDER BY total_elapsed_time DESC
@@ -162,11 +163,11 @@ task_stats AS (
         (SELECT MAX(scheduled_time)
          FROM SNOWFLAKE.ACCOUNT_USAGE.TASK_HISTORY
          WHERE name = t.name AND state = 'SUCCEEDED'
-         AND database_name = 'smdh_tenant_' || '&tenant_id') AS last_success_time,
+         AND database_name = 'smdh_tenant_' || $tenant_id) AS last_success_time,
         (SELECT COUNT(*)
          FROM SNOWFLAKE.ACCOUNT_USAGE.TASK_HISTORY
          WHERE name = t.name AND state = 'FAILED'
-         AND database_name = 'smdh_tenant_' || '&tenant_id'
+         AND database_name = 'smdh_tenant_' || $tenant_id
          AND scheduled_time >= DATEADD(hour, -24, CURRENT_TIMESTAMP())) AS failures_24h
     FROM smdh_tenant_${tenant_id}.INFORMATION_SCHEMA.TASKS t
 )
@@ -266,7 +267,7 @@ storage_usage AS (
         AVG(average_database_bytes) / (1024*1024*1024*1024) AS avg_tb_stored,
         AVG(average_failsafe_bytes) / (1024*1024*1024*1024) AS avg_tb_failsafe
     FROM SNOWFLAKE.ACCOUNT_USAGE.DATABASE_STORAGE_USAGE_HISTORY
-    WHERE database_name = 'smdh_tenant_' || '&tenant_id'
+    WHERE database_name = 'smdh_tenant_' || $tenant_id
     AND usage_date >= DATEADD(day, -30, CURRENT_TIMESTAMP())
     GROUP BY database_name, usage_date
 )
@@ -413,7 +414,7 @@ SELECT
      WHERE ingestion_timestamp >= DATEADD(day, -1, CURRENT_TIMESTAMP())) AS readings_last_24h,
     -- Devices
     (SELECT COUNT(*) FROM smdh_infrastructure.tenant_configs.devices
-     WHERE tenant_id = '&tenant_id' AND status = 'active') AS total_devices,
+     WHERE tenant_id = $tenant_id AND status = 'active') AS total_devices,
     (SELECT COUNT(*) FROM smdh_tenant_${tenant_id}.aggregated.dt_device_health_current
      WHERE connectivity_status = 'Online') AS devices_online,
     -- Sites
@@ -451,7 +452,7 @@ BEGIN
     -- Display system summary
     LET result STRING := '========================================\n';
     result := result || 'SMDH TENANT MONITORING DASHBOARD\n';
-    result := result || 'Tenant: ' || '&tenant_id' || '\n';
+    result := result || 'Tenant: ' || $tenant_id || '\n';
     result := result || '========================================\n\n';
 
     -- System summary
@@ -489,9 +490,9 @@ SELECT 'Created procedure: SP_MONITORING_DASHBOARD' AS result;
 SELECT '11. Granting Monitoring Permissions...' AS step;
 
 -- Grant all monitoring views to tenant roles
-SET readonly_role = 'smdh_tenant_' || '&tenant_id' || '_readonly';
-SET user_role = 'smdh_tenant_' || '&tenant_id' || '_user';
-SET admin_role = 'smdh_tenant_' || '&tenant_id' || '_admin';
+SET readonly_role = 'smdh_tenant_' || $tenant_id || '_readonly';
+SET user_role = 'smdh_tenant_' || $tenant_id || '_user';
+SET admin_role = 'smdh_tenant_' || $tenant_id || '_admin';
 
 GRANT SELECT ON ALL VIEWS IN SCHEMA analytics TO ROLE IDENTIFIER($readonly_role);
 GRANT SELECT ON ALL VIEWS IN SCHEMA analytics TO ROLE IDENTIFIER($user_role);

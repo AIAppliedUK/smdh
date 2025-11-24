@@ -1,0 +1,47 @@
+# SMDH IoT Testing Requirements
+# Python dependencies for IoT device simulation and testing
+
+# AWS IoT SDK for MQTT communication
+AWSIoTPythonSDK>=1.5.0
+
+# AWS SDK for Python (for API calls)
+boto3>=1.26.0
+
+# Data formatting and display
+tabulate>=0.9.0
+
+# JSON processing
+jsonschema>=4.0.0
+
+# Testing utilities
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+pytest-timeout>=2.1.0
+
+# Logging and monitoring
+colorlog>=6.7.0
+
+# Date/time handling
+python-dateutil>=2.8.2
+
+# Environment management
+python-dotenv>=1.0.0
+
+# HTTP testing (for REST API tests)
+requests>=2.28.0
+
+# Performance testing
+locust>=2.15.0
+
+# Data validation
+pydantic>=2.0.0
+
+# Mock testing
+moto>=4.1.0
+
+# Async MQTT client (alternative option)
+paho-mqtt>=1.6.1
+
+# Certificate handling
+cryptography>=41.0.0
+pyOpenSSL>=23.2.0

@@ -1,0 +1,361 @@
+{
+  "info": {
+    "name": "SMDH IoT Testing Collection",
+    "description": "Complete test collection for SMDH IoT infrastructure including AWS IoT Core REST API and HTTP endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "awsv4",
+    "awsv4": [
+      {
+        "key": "accessKey",
+        "value": "{{AWS_ACCESS_KEY}}",
+        "type": "string"
+      },
+      {
+        "key": "secretKey",
+        "value": "{{AWS_SECRET_KEY}}",
+        "type": "string"
+      },
+      {
+        "key": "region",
+        "value": "{{AWS_REGION}}",
+        "type": "string"
+      },
+      {
+        "key": "service",
+        "value": "iot",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "IOT_ENDPOINT",
+      "value": "xxx.iot.eu-west-1.amazonaws.com",
+      "type": "string",
+      "description": "Your AWS IoT endpoint"
+    },
+    {
+      "key": "AWS_REGION",
+      "value": "eu-west-1",
+      "type": "string"
+    },
+    {
+      "key": "AWS_ACCESS_KEY",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "AWS_SECRET_KEY",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "TENANT_ID",
+      "value": "tenant-001",
+      "type": "string"
+    },
+    {
+      "key": "SITE_ID",
+      "value": "site_001",
+      "type": "string"
+    },
+    {
+      "key": "THING_NAME",
+      "value": "smdh-gateway-tenant-001-site_001-gw_001",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Device Registry",
+      "item": [
+        {
+          "name": "List Things",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://{{IOT_ENDPOINT}}/things",
+              "protocol": "https",
+              "host": ["{{IOT_ENDPOINT}}"],
+              "path": ["things"]
+            }
+          }
+        },
+        {
+          "name": "Get Thing Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://{{IOT_ENDPOINT}}/things/{{THING_NAME}}",
+              "protocol": "https",
+              "host": ["{{IOT_ENDPOINT}}"],
+              "path": ["things", "{{THING_NAME}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Thing Attributes",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"attributes\": {\n    \"tenant_id\": \"{{TENANT_ID}}\",\n    \"site_id\": \"{{SITE_ID}}\",\n    \"device_type\": \"gateway\",\n    \"firmware_version\": \"2.1.0\",\n    \"last_updated\": \"{{$timestamp}}\"\n  }\n}"
+            },
+            "url": {
+              "raw": "https://{{IOT_ENDPOINT}}/things/{{THING_NAME}}",
+              "protocol": "https",
+              "host": ["{{IOT_ENDPOINT}}"],
+              "path": ["things", "{{THING_NAME}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "MQTT over HTTP",
+      "item": [
+        {
+          "name": "Publish Sensor Data",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messageId\": \"msg_{{$randomInt}}\",\n  \"timestamp\": \"{{$isoTimestamp}}\",\n  \"tenantId\": \"{{TENANT_ID}}\",\n  \"siteId\": \"{{SITE_ID}}\",\n  \"deviceType\": \"water_level_sensor\",\n  \"measurements\": {\n    \"waterLevel\": {{$randomInt}}{{$randomInt}},\n    \"flowRate\": {{$randomInt}}{{$randomInt}},\n    \"pressure\": 1.{{$randomInt}},\n    \"temperature\": 2{{$randomInt}}\n  },\n  \"quality\": {\n    \"ph\": 7.{{$randomInt}},\n    \"turbidity\": 0.{{$randomInt}},\n    \"conductivity\": {{$randomInt}}00\n  },\n  \"status\": {\n    \"batteryLevel\": {{$randomInt}}0,\n    \"signalStrength\": -{{$randomInt}}0,\n    \"uptime\": {{$randomInt}}000\n  }\n}"
+            },
+            "url": {
+              "raw": "https://{{IOT_ENDPOINT}}/topics/smdh/{{TENANT_ID}}/{{SITE_ID}}/sensor-data",
+              "protocol": "https",
+              "host": ["{{IOT_ENDPOINT}}"],
+              "path": ["topics", "smdh", "{{TENANT_ID}}", "{{SITE_ID}}", "sensor-data"],
+              "query": [
+                {
+                  "key": "qos",
+                  "value": "1"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Publish Device Status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messageId\": \"status_{{$randomInt}}\",\n  \"timestamp\": \"{{$isoTimestamp}}\",\n  \"tenantId\": \"{{TENANT_ID}}\",\n  \"siteId\": \"{{SITE_ID}}\",\n  \"deviceType\": \"gateway\",\n  \"status\": \"online\",\n  \"systemInfo\": {\n    \"uptime\": {{$randomInt}}000,\n    \"cpuUsage\": {{$randomInt}},\n    \"memoryUsage\": {{$randomInt}},\n    \"diskUsage\": {{$randomInt}},\n    \"temperature\": 4{{$randomInt}}\n  },\n  \"network\": {\n    \"connectedDevices\": {{$randomInt}},\n    \"packetsReceived\": {{$randomInt}}000,\n    \"packetsTransmitted\": {{$randomInt}}000,\n    \"errorRate\": 0.0{{$randomInt}}\n  }\n}"
+            },
+            "url": {
+              "raw": "https://{{IOT_ENDPOINT}}/topics/smdh/{{TENANT_ID}}/{{SITE_ID}}/device-status",
+              "protocol": "https",
+              "host": ["{{IOT_ENDPOINT}}"],
+              "path": ["topics", "smdh", "{{TENANT_ID}}", "{{SITE_ID}}", "device-status"]
+            }
+          }
+        },
+        {
+          "name": "Publish Batch Data",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"batchId\": \"batch_{{$timestamp}}\",\n  \"tenantId\": \"{{TENANT_ID}}\",\n  \"siteId\": \"{{SITE_ID}}\",\n  \"messages\": [\n    {\n      \"messageId\": \"msg_001\",\n      \"timestamp\": \"{{$isoTimestamp}}\",\n      \"deviceType\": \"water_level_sensor\",\n      \"measurements\": {\n        \"waterLevel\": 2.5,\n        \"flowRate\": 45.2,\n        \"pressure\": 1.8\n      }\n    },\n    {\n      \"messageId\": \"msg_002\",\n      \"timestamp\": \"{{$isoTimestamp}}\",\n      \"deviceType\": \"pump_station\",\n      \"measurements\": {\n        \"pumpStatus\": \"running\",\n        \"flowRate\": 250.5,\n        \"powerConsumption\": 15.3\n      }\n    },\n    {\n      \"messageId\": \"msg_003\",\n      \"timestamp\": \"{{$isoTimestamp}}\",\n      \"deviceType\": \"water_level_sensor\",\n      \"measurements\": {\n        \"waterLevel\": 2.8,\n        \"flowRate\": 48.7,\n        \"pressure\": 1.9\n      }\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "https://{{IOT_ENDPOINT}}/topics/smdh/{{TENANT_ID}}/{{SITE_ID}}/sensor-data",
+              "protocol": "https",
+              "host": ["{{IOT_ENDPOINT}}"],
+              "path": ["topics", "smdh", "{{TENANT_ID}}", "{{SITE_ID}}", "sensor-data"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Shadow Operations",
+      "item": [
+        {
+          "name": "Get Thing Shadow",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://{{IOT_ENDPOINT}}/things/{{THING_NAME}}/shadow",
+              "protocol": "https",
+              "host": ["{{IOT_ENDPOINT}}"],
+              "path": ["things", "{{THING_NAME}}", "shadow"]
+            }
+          }
+        },
+        {
+          "name": "Update Thing Shadow",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"state\": {\n    \"desired\": {\n      \"samplingInterval\": 60,\n      \"transmissionInterval\": 300,\n      \"alertThresholds\": {\n        \"waterLevelHigh\": 3.0,\n        \"waterLevelLow\": 0.5,\n        \"flowRateMin\": 10.0\n      },\n      \"operationMode\": \"normal\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "https://{{IOT_ENDPOINT}}/things/{{THING_NAME}}/shadow",
+              "protocol": "https",
+              "host": ["{{IOT_ENDPOINT}}"],
+              "path": ["things", "{{THING_NAME}}", "shadow"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Jobs",
+      "item": [
+        {
+          "name": "Create Firmware Update Job",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targets\": [\"arn:aws:iot:{{AWS_REGION}}:ACCOUNT_ID:thing/{{THING_NAME}}\"],\n  \"document\": \"{\\\"operation\\\":\\\"firmware_update\\\",\\\"version\\\":\\\"2.1.0\\\",\\\"url\\\":\\\"https://example.com/firmware/v2.1.0.bin\\\",\\\"checksum\\\":\\\"abc123\\\"}\",\n  \"description\": \"Firmware update to v2.1.0\",\n  \"targetSelection\": \"SNAPSHOT\"\n}"
+            },
+            "url": {
+              "raw": "https://{{IOT_ENDPOINT}}/jobs/firmware-update-{{$timestamp}}",
+              "protocol": "https",
+              "host": ["{{IOT_ENDPOINT}}"],
+              "path": ["jobs", "firmware-update-{{$timestamp}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Testing Utilities",
+      "item": [
+        {
+          "name": "Test Connectivity",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "https://{{IOT_ENDPOINT}}/",
+              "protocol": "https",
+              "host": ["{{IOT_ENDPOINT}}"],
+              "path": [""]
+            }
+          }
+        },
+        {
+          "name": "Burst Test - 10 Messages",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "// This is a template - use Postman Collection Runner\n// to send multiple messages in sequence\n{\n  \"messageId\": \"burst_{{$randomInt}}_{{$timestamp}}\",\n  \"timestamp\": \"{{$isoTimestamp}}\",\n  \"tenantId\": \"{{TENANT_ID}}\",\n  \"siteId\": \"{{SITE_ID}}\",\n  \"deviceType\": \"water_level_sensor\",\n  \"measurements\": {\n    \"waterLevel\": {{$randomInt}}.{{$randomInt}},\n    \"flowRate\": {{$randomInt}}{{$randomInt}},\n    \"pressure\": 1.{{$randomInt}},\n    \"temperature\": 2{{$randomInt}}\n  }\n}"
+            },
+            "url": {
+              "raw": "https://{{IOT_ENDPOINT}}/topics/smdh/{{TENANT_ID}}/{{SITE_ID}}/sensor-data",
+              "protocol": "https",
+              "host": ["{{IOT_ENDPOINT}}"],
+              "path": ["topics", "smdh", "{{TENANT_ID}}", "{{SITE_ID}}", "sensor-data"]
+            }
+          }
+        },
+        {
+          "name": "Load Test Template",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messageId\": \"load_{{$guid}}\",\n  \"timestamp\": \"{{$isoTimestamp}}\",\n  \"tenantId\": \"{{TENANT_ID}}\",\n  \"siteId\": \"{{SITE_ID}}\",\n  \"sequence\": {{$randomInt}},\n  \"deviceType\": \"water_level_sensor\",\n  \"measurements\": {\n    \"waterLevel\": {{$randomInt}}.{{$randomInt}},\n    \"flowRate\": {{$randomInt}}{{$randomInt}}.{{$randomInt}},\n    \"pressure\": {{$randomInt}}.{{$randomInt}},\n    \"temperature\": {{$randomInt}}{{$randomInt}}.{{$randomInt}}\n  },\n  \"quality\": {\n    \"ph\": {{$randomInt}}.{{$randomInt}},\n    \"turbidity\": {{$randomInt}}.{{$randomInt}},\n    \"conductivity\": {{$randomInt}}{{$randomInt}}{{$randomInt}}\n  },\n  \"status\": {\n    \"batteryLevel\": {{$randomInt}}{{$randomInt}},\n    \"signalStrength\": -{{$randomInt}}{{$randomInt}},\n    \"uptime\": {{$timestamp}}\n  },\n  \"metadata\": {\n    \"testType\": \"load\",\n    \"testRun\": \"{{$guid}}\",\n    \"clientInfo\": \"Postman Load Test\"\n  }\n}"
+            },
+            "url": {
+              "raw": "https://{{IOT_ENDPOINT}}/topics/smdh/{{TENANT_ID}}/{{SITE_ID}}/sensor-data",
+              "protocol": "https",
+              "host": ["{{IOT_ENDPOINT}}"],
+              "path": ["topics", "smdh", "{{TENANT_ID}}", "{{SITE_ID}}", "sensor-data"]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Pre-request script to set timestamps and random values",
+          "pm.variables.set('timestamp', Date.now());",
+          "pm.variables.set('isoTimestamp', new Date().toISOString());",
+          "pm.variables.set('randomFloat', (Math.random() * 10).toFixed(2));"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Test script to validate responses",
+          "pm.test('Status code is 200', function () {",
+          "    pm.response.to.have.status(200);",
+          "});",
+          "",
+          "pm.test('Response time is less than 1000ms', function () {",
+          "    pm.expect(pm.response.responseTime).to.be.below(1000);",
+          "});"
+        ]
+      }
+    }
+  ]
+}

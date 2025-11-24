@@ -26,8 +26,8 @@ NUM_SITES="${4:-5}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Default SnowSQL parameters
-# -o variable_substitution=true enables &variable syntax (per Snowflake docs)
-SNOWSQL_OPTS="-r ACCOUNTADMIN -o variable_substitution=true"
+# Variables are passed with -D flag for $ substitution in SQL
+SNOWSQL_OPTS="-r ACCOUNTADMIN"
 
 # SnowSQL command (use full path if not in PATH)
 if ! command -v snowsql &> /dev/null; then
@@ -129,9 +129,9 @@ run_sql_script "$SCRIPT_DIR/02_shared_resources.sql" || exit 1
 
 # Openflow connector configuration
 run_sql_script "$SCRIPT_DIR/03_openflow_connector.sql" \
-    -D "aws_iam_role_arn=arn:aws:iam::123456789012:role/placeholder" \
-    -D "aws_external_id=placeholder" \
-    -D "kinesis_stream_arn=arn:aws:kinesis:eu-west-2:123456789012:stream/placeholder" || {
+    -D aws_iam_role_arn='arn:aws:iam::123456789012:role/placeholder' \
+    -D aws_external_id='placeholder' \
+    -D kinesis_stream_arn='arn:aws:kinesis:eu-west-2:123456789012:stream/placeholder' || {
     log_error "Openflow connector setup failed"
     exit 1
 }
@@ -147,38 +147,38 @@ echo ""
 
 # Create tenant database
 run_sql_script "$SCRIPT_DIR/tenant/10_create_tenant_database.sql" \
-    -D "tenant_id=${TENANT_ID}" \
-    -D "tenant_name=${TENANT_NAME}" \
-    -D "aws_region=${AWS_REGION}" \
-    -D "num_sites=${NUM_SITES}" || exit 1
+    --variable tenant_id="$TENANT_ID" \
+    --variable tenant_name="$TENANT_NAME" \
+    --variable aws_region="$AWS_REGION" \
+    --variable num_sites="$NUM_SITES" || exit 1
 
 # Configure schemas
 run_sql_script "$SCRIPT_DIR/tenant/11_create_schemas.sql" \
-    -D "tenant_id=${TENANT_ID}" || exit 1
+    --variable tenant_id="$TENANT_ID" || exit 1
 
 # Create tables
 run_sql_script "$SCRIPT_DIR/tenant/12_create_tables.sql" \
-    -D "tenant_id=${TENANT_ID}" || exit 1
+    --variable tenant_id="$TENANT_ID" || exit 1
 
 # Create streams
 run_sql_script "$SCRIPT_DIR/tenant/13_create_streams.sql" \
-    -D "tenant_id=${TENANT_ID}" || exit 1
+    --variable tenant_id="$TENANT_ID" || exit 1
 
 # Create tasks
 run_sql_script "$SCRIPT_DIR/tenant/14_create_tasks.sql" \
-    -D "tenant_id=${TENANT_ID}" || exit 1
+    --variable tenant_id="$TENANT_ID" || exit 1
 
 # Create dynamic tables
 run_sql_script "$SCRIPT_DIR/tenant/15_create_dynamic_tables.sql" \
-    -D "tenant_id=${TENANT_ID}" || exit 1
+    --variable tenant_id="$TENANT_ID" || exit 1
 
 # Create roles
 run_sql_script "$SCRIPT_DIR/tenant/16_create_roles.sql" \
-    -D "tenant_id=${TENANT_ID}" || exit 1
+    --variable tenant_id="$TENANT_ID" || exit 1
 
 # Create monitoring
 run_sql_script "$SCRIPT_DIR/tenant/17_create_monitoring.sql" \
-    -D "tenant_id=${TENANT_ID}" || exit 1
+    --variable tenant_id="$TENANT_ID" || exit 1
 
 echo ""
 
@@ -235,7 +235,7 @@ UNION ALL SELECT '║  Validation Complete                                      
 UNION ALL SELECT '╚════════════════════════════════════════════════════════════╝';
 EOF
 
-$SNOWSQL_CMD $SNOWSQL_OPTS -D "tenant_id=$TENANT_ID" -f /tmp/smdh_verification.sql
+$SNOWSQL_CMD $SNOWSQL_OPTS --variable "tenant_id=$TENANT_ID" -f /tmp/smdh_verification.sql
 
 log_success "Verification completed"
 echo ""

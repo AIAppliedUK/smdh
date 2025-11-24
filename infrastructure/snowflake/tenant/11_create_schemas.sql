@@ -2,7 +2,7 @@
 -- SMDH Tenant Schema Configuration
 -- ============================================================================
 -- Purpose: Configure tenant schemas with appropriate settings and objects
--- Usage: snowsql -f tenant/11_create_schemas.sql -D tenant_id='company_a'
+-- Usage: snowsql -f tenant/11_create_schemas.sql --variable tenant_id='company_a'
 -- Author: SMDH Platform Team
 -- Version: 1.0
 -- ============================================================================
@@ -14,6 +14,7 @@
 -- ============================================================================
 
 USE ROLE ACCOUNTADMIN;
+USE WAREHOUSE SMDH_WH;
 
 -- Display banner
 SELECT '╔════════════════════════════════════════════════════════════════╗' AS banner
@@ -26,20 +27,20 @@ UNION ALL SELECT '╚═══════════════════�
 
 SELECT '1. Validating Tenant Database...' AS step;
 
-SET database_name = 'smdh_tenant_' || '&tenant_id';
+SET database_name = 'smdh_tenant_' || $tenant_id;
 
 -- Check if database exists
 SELECT
     CASE
         WHEN EXISTS (
             SELECT 1 FROM SNOWFLAKE.INFORMATION_SCHEMA.DATABASES
-            WHERE DATABASE_NAME = &database_name
+            WHERE DATABASE_NAME = $database_name
         )
-        THEN '✓ Tenant database found: ' || '&database_name'
+        THEN '✓ Tenant database found: ' || $database_name
         ELSE '✗ ERROR: Tenant database not found. Run 10_create_tenant_database.sql first.'
     END AS validation;
 
-USE DATABASE IDENTIFIER(&database_name);
+USE DATABASE IDENTIFIER($database_name);
 
 -- ============================================================================
 -- 2. Verify and Configure RAW Schema

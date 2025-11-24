@@ -2,7 +2,7 @@
 -- SMDH Tenant Streams Creation (Change Data Capture)
 -- ============================================================================
 -- Purpose: Create streams for real-time data processing pipeline
--- Usage: snowsql -f tenant/13_create_streams.sql -D tenant_id='company_a'
+-- Usage: snowsql -f tenant/13_create_streams.sql --variable tenant_id='company_a'
 -- Author: SMDH Platform Team
 -- Version: 1.0
 -- ============================================================================
@@ -13,6 +13,7 @@
 -- ============================================================================
 
 USE ROLE ACCOUNTADMIN;
+USE WAREHOUSE SMDH_WH;
 
 -- Display banner
 SELECT '╔════════════════════════════════════════════════════════════════╗' AS banner
@@ -25,11 +26,11 @@ UNION ALL SELECT '╚═══════════════════�
 
 SELECT '1. Validating Tenant Database...' AS step;
 
-SET database_name = 'smdh_tenant_' || '&tenant_id';
+SET database_name = 'smdh_tenant_' || $tenant_id;
 
-USE DATABASE IDENTIFIER(&database_name);
+USE DATABASE IDENTIFIER($database_name);
 
-SELECT 'Using database: ' || '&database_name' AS info;
+SELECT 'Using database: ' || $database_name AS info;
 
 -- ============================================================================
 -- 2. Create Stream on RAW.SENSOR_READINGS
@@ -256,7 +257,7 @@ INSERT INTO sensor_readings (
     payload,
     source_system
 ) VALUES (
-    &tenant_id,
+    $tenant_id,
     'test_sensor_001',
     'test_site',
     CURRENT_TIMESTAMP(),
@@ -350,22 +351,23 @@ SELECT 'Created stream maintenance procedures' AS result;
 SELECT '13. Granting Stream Permissions...' AS step;
 
 USE ROLE ACCOUNTADMIN;
+USE WAREHOUSE SMDH_WH;
 
 -- Grant select on streams to tenant roles
-SET admin_role_name = 'smdh_tenant_' || '&tenant_id' || '_admin';
-SET user_role_name = 'smdh_tenant_' || '&tenant_id' || '_user';
+SET admin_role_name = 'smdh_tenant_' || $tenant_id || '_admin';
+SET user_role_name = 'smdh_tenant_' || $tenant_id || '_user';
 
 -- Admin can select from and manage streams
-GRANT SELECT ON ALL STREAMS IN DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER(&admin_role_name);
-GRANT SELECT ON FUTURE STREAMS IN DATABASE IDENTIFIER(&database_name) TO ROLE IDENTIFIER(&admin_role_name);
+GRANT SELECT ON ALL STREAMS IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($admin_role_name);
+GRANT SELECT ON FUTURE STREAMS IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($admin_role_name);
 
 -- Regular users can only select (read stream metadata)
-GRANT SELECT ON ALL STREAMS IN SCHEMA smdh_tenant_${tenant_id}.analytics TO ROLE IDENTIFIER(&user_role_name);
+GRANT SELECT ON ALL STREAMS IN SCHEMA smdh_tenant_${tenant_id}.analytics TO ROLE IDENTIFIER($user_role_name);
 
 -- Grant procedure execution
-GRANT USAGE ON PROCEDURE smdh_tenant_${tenant_id}.analytics.sp_reset_stream(VARCHAR, VARCHAR) TO ROLE IDENTIFIER(&admin_role_name);
-GRANT USAGE ON PROCEDURE smdh_tenant_${tenant_id}.analytics.sp_check_streams_health() TO ROLE IDENTIFIER(&admin_role_name);
-GRANT USAGE ON PROCEDURE smdh_tenant_${tenant_id}.analytics.sp_check_streams_health() TO ROLE IDENTIFIER(&user_role_name);
+GRANT USAGE ON PROCEDURE smdh_tenant_${tenant_id}.analytics.sp_reset_stream(VARCHAR, VARCHAR) TO ROLE IDENTIFIER($admin_role_name);
+GRANT USAGE ON PROCEDURE smdh_tenant_${tenant_id}.analytics.sp_check_streams_health() TO ROLE IDENTIFIER($admin_role_name);
+GRANT USAGE ON PROCEDURE smdh_tenant_${tenant_id}.analytics.sp_check_streams_health() TO ROLE IDENTIFIER($user_role_name);
 
 SELECT 'Granted stream permissions' AS result;
 
@@ -376,7 +378,7 @@ SELECT 'Granted stream permissions' AS result;
 SELECT '14. Verifying Stream Creation...' AS step;
 
 -- Show all streams
-USE DATABASE IDENTIFIER(&database_name);
+USE DATABASE IDENTIFIER($database_name);
 SHOW STREAMS;
 
 -- Query stream status view

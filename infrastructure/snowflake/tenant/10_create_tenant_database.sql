@@ -3,10 +3,10 @@
 -- ============================================================================
 -- Purpose: Create isolated database for a new tenant
 -- Usage: snowsql -f tenant/10_create_tenant_database.sql \
---          -D tenant_id='company_a' \
---          -D tenant_name='Company A Manufacturing Ltd' \
---          -D aws_region='eu-west-2' \
---          -D num_sites=5
+--          --variable tenant_id='company_a' \
+--          --variable tenant_name='Company A Manufacturing Ltd' \
+--          --variable aws_region='eu-west-2' \
+--          --variable num_sites=5
 -- Author: SMDH Platform Team
 -- Version: 1.0
 -- ============================================================================
@@ -17,6 +17,7 @@
 -- ============================================================================
 
 USE ROLE ACCOUNTADMIN;
+USE WAREHOUSE SMDH_WH;
 
 -- Display banner
 SELECT '╔════════════════════════════════════════════════════════════════╗' AS banner
@@ -29,16 +30,16 @@ UNION ALL SELECT '╚═══════════════════�
 
 SELECT '1. Validating Tenant Parameters...' AS step;
 
--- Parameters expected via -D flags
-SELECT 'Tenant ID: ' || '&tenant_id' AS parameter;
-SELECT 'Tenant Name: ' || '&tenant_name' AS parameter;
-SELECT 'AWS Region: ' || '&aws_region' AS parameter;
-SELECT 'Number of Sites: ' || &num_sites AS parameter;
+-- Parameters expected via --variable flags
+SELECT 'Tenant ID: ' || $tenant_id AS parameter;
+SELECT 'Tenant Name: ' || $tenant_name AS parameter;
+SELECT 'AWS Region: ' || $aws_region AS parameter;
+SELECT 'Number of Sites: ' || $num_sites AS parameter;
 
 -- Validate tenant_id format (lowercase, alphanumeric, underscores only)
 SELECT
     CASE
-        WHEN '&tenant_id' REGEXP '^[a-z0-9_]+$'
+        WHEN $tenant_id REGEXP '^[a-z0-9_]+$'
         THEN '✓ Tenant ID format is valid'
         ELSE '✗ ERROR: Tenant ID must be lowercase alphanumeric with underscores only'
     END AS validation;
@@ -48,9 +49,9 @@ SELECT
     CASE
         WHEN EXISTS (
             SELECT 1 FROM smdh_infrastructure.tenant_configs.tenants
-            WHERE tenant_id = '&tenant_id'
+            WHERE tenant_id = $tenant_id
         )
-        THEN '⚠ WARNING: Tenant ' || '&tenant_id' || ' already exists. This will update configuration.'
+        THEN '⚠ WARNING: Tenant ' || $tenant_id || ' already exists. This will update configuration.'
         ELSE '✓ New tenant will be created'
     END AS tenant_check;
 
@@ -60,12 +61,12 @@ SELECT
 
 SELECT '2. Creating Tenant Database...' AS step;
 
-SET database_name = 'smdh_tenant_' || '&tenant_id';
+SET database_name = 'smdh_tenant_' || $tenant_id;
 
 -- Create database with Time Travel enabled
 CREATE DATABASE IF NOT EXISTS IDENTIFIER($database_name)
     DATA_RETENTION_TIME_IN_DAYS = 7  -- 7 days Time Travel for recovery
-    COMMENT = 'SMDH Tenant Database for &tenant_name. Isolated database per tenant for complete data separation.';
+    COMMENT = 'SMDH Tenant Database for ' || $tenant_name || '. Isolated database per tenant for complete data separation.';
 
 SELECT 'Created database: ' || $database_name AS result;
 
@@ -109,11 +110,11 @@ SELECT '4. Registering Tenant in Infrastructure Registry...' AS step;
 MERGE INTO smdh_infrastructure.tenant_configs.tenants AS target
 USING (
     SELECT
-        '&tenant_id' AS tenant_id,
-        '&tenant_name' AS tenant_name,
+        $tenant_id AS tenant_id,
+        $tenant_name AS tenant_name,
         'provisioning' AS status,
-        '&aws_region' AS aws_region,
-        &num_sites AS num_sites,
+        $aws_region AS aws_region,
+        $num_sites AS num_sites,
         CURRENT_TIMESTAMP() AS created_date
 ) AS source
 ON target.tenant_id = source.tenant_id
@@ -283,7 +284,7 @@ USE SCHEMA analytics;
 
 -- Tenant configuration metadata table
 CREATE OR REPLACE TABLE tenant_metadata (
-    tenant_id VARCHAR(100) DEFAULT '&tenant_id',
+    tenant_id VARCHAR(100) DEFAULT $tenant_id,
     metadata_key VARCHAR(255) NOT NULL,
     metadata_value VARIANT,
     description VARCHAR(1000),
@@ -296,10 +297,10 @@ COMMENT = 'Tenant-specific configuration and metadata key-value store';
 
 -- Insert initial metadata
 INSERT INTO tenant_metadata (metadata_key, metadata_value, description) VALUES
-    ('tenant_id', TO_VARIANT('&tenant_id'), 'Tenant identifier'),
-    ('tenant_name', TO_VARIANT('&tenant_name'), 'Tenant display name'),
-    ('aws_region', TO_VARIANT('&aws_region'), 'AWS region for IoT Core and Kinesis'),
-    ('num_sites', TO_VARIANT(&num_sites), 'Number of manufacturing sites'),
+    ('tenant_id', TO_VARIANT($tenant_id), 'Tenant identifier'),
+    ('tenant_name', TO_VARIANT($tenant_name), 'Tenant display name'),
+    ('aws_region', TO_VARIANT($aws_region), 'AWS region for IoT Core and Kinesis'),
+    ('num_sites', TO_VARIANT($num_sites), 'Number of manufacturing sites'),
     ('database_created', TO_VARIANT(CURRENT_TIMESTAMP()), 'Database creation timestamp'),
     ('schema_version', TO_VARIANT('1.0'), 'Database schema version');
 
@@ -338,7 +339,7 @@ SELECT
     aws_region,
     created_date
 FROM smdh_infrastructure.tenant_configs.tenants
-WHERE tenant_id = '&tenant_id';
+WHERE tenant_id = $tenant_id;
 
 -- ============================================================================
 -- 11. Summary
@@ -349,14 +350,14 @@ UNION ALL SELECT '║  Tenant Database Creation Complete                        
 UNION ALL SELECT '╚════════════════════════════════════════════════════════════╝'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Tenant Details:'
-UNION ALL SELECT '  • Tenant ID: ' || '&tenant_id'
-UNION ALL SELECT '  • Tenant Name: ' || '&tenant_name'
-UNION ALL SELECT '  • Database: smdh_tenant_' || '&tenant_id'
-UNION ALL SELECT '  • AWS Region: ' || '&aws_region'
-UNION ALL SELECT '  • Number of Sites: ' || &num_sites
+UNION ALL SELECT '  • Tenant ID: ' || $tenant_id
+UNION ALL SELECT '  • Tenant Name: ' || $tenant_name
+UNION ALL SELECT '  • Database: smdh_tenant_' || $tenant_id
+UNION ALL SELECT '  • AWS Region: ' || $aws_region
+UNION ALL SELECT '  • Number of Sites: ' || $num_sites
 UNION ALL SELECT ''
 UNION ALL SELECT 'Created Resources:'
-UNION ALL SELECT '  ✓ Database: smdh_tenant_' || '&tenant_id'
+UNION ALL SELECT '  ✓ Database: smdh_tenant_' || $tenant_id
 UNION ALL SELECT '  ✓ Schemas: raw, normalized, aggregated, analytics'
 UNION ALL SELECT '  ✓ File Formats: ff_json, ff_csv, ff_parquet'
 UNION ALL SELECT '  ✓ Stages: stage_uploads, stage_errors'
@@ -373,7 +374,7 @@ UNION ALL SELECT '  6. Run 16_create_roles.sql for additional RBAC (optional)'
 UNION ALL SELECT '  7. Run 17_create_monitoring.sql for tenant dashboards'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Verification:'
-UNION ALL SELECT '  USE DATABASE smdh_tenant_' || '&tenant_id' || ';'
+UNION ALL SELECT '  USE DATABASE smdh_tenant_' || $tenant_id || ';'
 UNION ALL SELECT '  SHOW SCHEMAS;'
 UNION ALL SELECT '  SELECT * FROM analytics.tenant_metadata;'
 UNION ALL SELECT '============================================================';

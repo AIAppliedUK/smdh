@@ -2,7 +2,7 @@
 -- SMDH Tenant Table Definitions
 -- ============================================================================
 -- Purpose: Create all data tables for tenant
--- Usage: snowsql -f tenant/12_create_tables.sql -D tenant_id='company_a'
+-- Usage: snowsql -f tenant/12_create_tables.sql --variable tenant_id='company_a'
 -- Author: SMDH Platform Team
 -- Version: 1.0
 -- ============================================================================
@@ -14,6 +14,7 @@
 -- ============================================================================
 
 USE ROLE ACCOUNTADMIN;
+USE WAREHOUSE SMDH_WH;
 
 -- Display banner
 SELECT '╔════════════════════════════════════════════════════════════════╗' AS banner
@@ -26,11 +27,11 @@ UNION ALL SELECT '╚═══════════════════�
 
 SELECT '1. Validating Tenant Database...' AS step;
 
-SET database_name = 'smdh_tenant_' || '&tenant_id';
+SET database_name = 'smdh_tenant_' || $tenant_id;
 
-USE DATABASE IDENTIFIER(&database_name);
+USE DATABASE IDENTIFIER($database_name);
 
-SELECT 'Using database: ' || '&database_name' AS info;
+SELECT 'Using database: ' || $database_name AS info;
 
 -- ============================================================================
 -- 2. RAW SCHEMA: Sensor Readings Table
@@ -43,7 +44,7 @@ USE SCHEMA raw;
 CREATE TABLE IF NOT EXISTS sensor_readings (
     -- Primary identifiers
     reading_id VARCHAR(255) DEFAULT UUID_STRING(),
-    tenant_id VARCHAR(100) NOT NULL DEFAULT &tenant_id,
+    tenant_id VARCHAR(100) NOT NULL DEFAULT $tenant_id,
     sensor_id VARCHAR(255) NOT NULL,
     site_id VARCHAR(100),
     device_id VARCHAR(255),
@@ -87,7 +88,7 @@ SELECT '3. Creating RAW.GATEWAY_CONNECTIONS Table...' AS step;
 CREATE TABLE IF NOT EXISTS gateway_connections (
     -- Primary identifiers
     connection_id VARCHAR(255) DEFAULT UUID_STRING(),
-    tenant_id VARCHAR(100) NOT NULL DEFAULT &tenant_id,
+    tenant_id VARCHAR(100) NOT NULL DEFAULT $tenant_id,
     gateway_id VARCHAR(255) NOT NULL,
     site_id VARCHAR(100),
 
@@ -130,7 +131,7 @@ SELECT '4. Creating RAW.DEVICE_STATUS Table...' AS step;
 CREATE TABLE IF NOT EXISTS device_status (
     -- Primary identifiers
     event_id VARCHAR(255) DEFAULT UUID_STRING(),
-    tenant_id VARCHAR(100) NOT NULL DEFAULT &tenant_id,
+    tenant_id VARCHAR(100) NOT NULL DEFAULT $tenant_id,
     device_id VARCHAR(255) NOT NULL,
     site_id VARCHAR(100),
 
@@ -170,7 +171,7 @@ SELECT '5. Creating RAW.UPLOADED_FILES Table...' AS step;
 CREATE TABLE IF NOT EXISTS uploaded_files (
     -- Primary identifiers
     file_id VARCHAR(255) PRIMARY KEY DEFAULT UUID_STRING(),
-    tenant_id VARCHAR(100) NOT NULL DEFAULT &tenant_id,
+    tenant_id VARCHAR(100) NOT NULL DEFAULT $tenant_id,
 
     -- File details
     file_name VARCHAR(500),
@@ -213,7 +214,7 @@ USE SCHEMA normalized;
 CREATE TABLE IF NOT EXISTS sensor_metrics (
     -- Primary identifiers
     metric_id VARCHAR(255) DEFAULT UUID_STRING(),
-    tenant_id VARCHAR(100) NOT NULL DEFAULT &tenant_id,
+    tenant_id VARCHAR(100) NOT NULL DEFAULT $tenant_id,
     sensor_id VARCHAR(255) NOT NULL,
     site_id VARCHAR(100),
     device_id VARCHAR(255),
@@ -261,7 +262,7 @@ SELECT '7. Creating NORMALIZED.DEVICE_EVENTS Table...' AS step;
 CREATE TABLE IF NOT EXISTS device_events (
     -- Primary identifiers
     event_id VARCHAR(255) DEFAULT UUID_STRING(),
-    tenant_id VARCHAR(100) NOT NULL DEFAULT &tenant_id,
+    tenant_id VARCHAR(100) NOT NULL DEFAULT $tenant_id,
     device_id VARCHAR(255) NOT NULL,
     site_id VARCHAR(100),
 
@@ -303,7 +304,7 @@ SELECT '8. Creating NORMALIZED.SITE_METRICS Table...' AS step;
 CREATE TABLE IF NOT EXISTS site_metrics (
     -- Primary identifiers
     metric_id VARCHAR(255) DEFAULT UUID_STRING(),
-    tenant_id VARCHAR(100) NOT NULL DEFAULT &tenant_id,
+    tenant_id VARCHAR(100) NOT NULL DEFAULT $tenant_id,
     site_id VARCHAR(100) NOT NULL,
 
     -- Timestamp
@@ -347,7 +348,7 @@ USE SCHEMA aggregated;
 
 CREATE TABLE IF NOT EXISTS sensor_metrics_hourly (
     -- Primary identifiers
-    tenant_id VARCHAR(100) NOT NULL DEFAULT &tenant_id,
+    tenant_id VARCHAR(100) NOT NULL DEFAULT $tenant_id,
     sensor_id VARCHAR(255) NOT NULL,
     site_id VARCHAR(100),
     metric_name VARCHAR(255) NOT NULL,
@@ -391,7 +392,7 @@ SELECT '10. Creating AGGREGATED.SENSOR_METRICS_DAILY Table...' AS step;
 
 CREATE TABLE IF NOT EXISTS sensor_metrics_daily (
     -- Primary identifiers
-    tenant_id VARCHAR(100) NOT NULL DEFAULT &tenant_id,
+    tenant_id VARCHAR(100) NOT NULL DEFAULT $tenant_id,
     sensor_id VARCHAR(255) NOT NULL,
     site_id VARCHAR(100),
     metric_name VARCHAR(255) NOT NULL,
@@ -441,7 +442,7 @@ SELECT '11. Creating AGGREGATED.SITE_PERFORMANCE_DAILY Table...' AS step;
 
 CREATE TABLE IF NOT EXISTS site_performance_daily (
     -- Primary identifiers
-    tenant_id VARCHAR(100) NOT NULL DEFAULT &tenant_id,
+    tenant_id VARCHAR(100) NOT NULL DEFAULT $tenant_id,
     site_id VARCHAR(100) NOT NULL,
     day_date DATE NOT NULL,
 
@@ -511,7 +512,7 @@ SELECT
     d.firmware_version
 FROM smdh_infrastructure.tenant_configs.devices d
 LEFT JOIN latest_readings lr ON d.device_id = lr.sensor_id
-WHERE d.tenant_id = '&tenant_id'
+WHERE d.tenant_id = $tenant_id
 ORDER BY status DESC, minutes_since_last_reading DESC;
 
 SELECT 'Created view: ANALYTICS.V_CURRENT_SENSOR_STATUS' AS result;
