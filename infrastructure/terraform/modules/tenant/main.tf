@@ -18,11 +18,18 @@ locals {
   # Generate site IDs based on num_sites
   site_ids = [for i in range(1, var.num_sites + 1) : format("site_%03d", i)]
 
-  # Create gateway thing names
-  gateway_things = [for site_id in local.site_ids : {
+  # Deployment mode flags
+  is_gateway_mode        = var.deployment_mode == "gateway"
+  is_network_server_mode = var.deployment_mode == "network_server"
+
+  # Create gateway thing names (only used in gateway mode)
+  gateway_things = local.is_gateway_mode ? [for site_id in local.site_ids : {
     site_id    = site_id
     thing_name = "smdh-gateway-${var.tenant_id}-${site_id}-gw_001"
-  }]
+  }] : []
+
+  # Network server thing name (only used in network_server mode)
+  network_server_thing_name = "smdh-ns-${var.tenant_id}-${var.network_server_name}"
 }
 
 # Create IoT Things for each gateway
@@ -56,6 +63,45 @@ resource "aws_iot_thing_principal_attachment" "gateways" {
   thing     = aws_iot_thing.gateways[each.key].name
 }
 
+# ============================================================================
+# Network Server Resources (ChirpStack mode)
+# ============================================================================
+
+# Create IoT Thing for network server (only in network_server mode)
+resource "aws_iot_thing" "network_server" {
+  count = local.is_network_server_mode ? 1 : 0
+
+  name            = local.network_server_thing_name
+  thing_type_name = var.network_server_thing_type_name
+
+  attributes = {
+    tenant_id       = var.tenant_id
+    device_type     = "network_server"
+    server_type     = var.network_server_name
+    deployment_date = timestamp()
+    managed_by      = "terraform"
+  }
+}
+
+# Generate X.509 certificate for network server
+resource "aws_iot_certificate" "network_server" {
+  count = local.is_network_server_mode ? 1 : 0
+
+  active = true
+}
+
+# Attach certificate to network server thing
+resource "aws_iot_thing_principal_attachment" "network_server" {
+  count = local.is_network_server_mode ? 1 : 0
+
+  principal = aws_iot_certificate.network_server[0].arn
+  thing     = aws_iot_thing.network_server[0].name
+}
+
+# ============================================================================
+# IoT Policy (supports both gateway and network_server modes)
+# ============================================================================
+
 # Create IoT Policy for tenant (with strict topic isolation)
 resource "aws_iot_policy" "tenant" {
   name = "smdh-policy-${var.tenant_id}"
@@ -64,10 +110,14 @@ resource "aws_iot_policy" "tenant" {
     Version = "2012-10-17"
     Statement = [
       # Allow connecting with tenant-specific client IDs
+      # Supports both gateway pattern (smdh-gateway-{tenant}-*) and NS pattern (smdh-ns-{tenant}-*)
       {
         Effect = "Allow"
         Action = "iot:Connect"
-        Resource = "arn:aws:iot:${var.aws_region}:${var.aws_account_id}:client/smdh-*-${var.tenant_id}-*"
+        Resource = [
+          "arn:aws:iot:${var.aws_region}:${var.aws_account_id}:client/smdh-gateway-${var.tenant_id}-*",
+          "arn:aws:iot:${var.aws_region}:${var.aws_account_id}:client/smdh-ns-${var.tenant_id}-*"
+        ]
       },
       # Allow publishing to tenant-specific topics only
       {
@@ -99,12 +149,20 @@ resource "aws_iot_policy" "tenant" {
   }
 }
 
-# Attach policy to all certificates
+# Attach policy to gateway certificates (gateway mode)
 resource "aws_iot_policy_attachment" "gateways" {
   for_each = { for gw in local.gateway_things : gw.thing_name => gw }
 
   policy = aws_iot_policy.tenant.name
   target = aws_iot_certificate.gateways[each.key].arn
+}
+
+# Attach policy to network server certificate (network_server mode)
+resource "aws_iot_policy_attachment" "network_server" {
+  count = local.is_network_server_mode ? 1 : 0
+
+  policy = aws_iot_policy.tenant.name
+  target = aws_iot_certificate.network_server[0].arn
 }
 
 # Create IoT Rule to route tenant data to Kinesis
@@ -291,7 +349,7 @@ resource "aws_iot_thing_group" "sites" {
   }
 }
 
-# Add gateways to their respective site thing groups
+# Add gateways to their respective site thing groups (gateway mode)
 resource "aws_iot_thing_group_membership" "gateways_to_sites" {
   for_each = { for gw in local.gateway_things : gw.thing_name => gw }
 
@@ -299,6 +357,17 @@ resource "aws_iot_thing_group_membership" "gateways_to_sites" {
   thing_group_name = aws_iot_thing_group.sites[each.value.site_id].name
 
   # Override the group's configuration if needed
+  override_dynamic_group = false
+}
+
+# Add network server to tenant thing group (network_server mode)
+# Network server is added directly to tenant group since it serves all sites
+resource "aws_iot_thing_group_membership" "network_server_to_tenant" {
+  count = local.is_network_server_mode ? 1 : 0
+
+  thing_name       = aws_iot_thing.network_server[0].name
+  thing_group_name = aws_iot_thing_group.tenant.name
+
   override_dynamic_group = false
 }
 

@@ -25,7 +25,7 @@ SELECT '1. DATABASE VALIDATION' AS section;
 SELECT
     CASE
         WHEN EXISTS (SELECT 1 FROM SNOWFLAKE.INFORMATION_SCHEMA.DATABASES WHERE DATABASE_NAME = &database_name)
-        THEN '✓ PASS: Tenant database exists'
+        THEN '[OK] PASS: Tenant database exists'
         ELSE '✗ FAIL: Tenant database not found'
     END AS check_result;
 
@@ -36,7 +36,7 @@ SELECT
             SELECT 1 FROM smdh_infrastructure.tenant_configs.tenants
             WHERE tenant_id = '&tenant_id'
         )
-        THEN '✓ PASS: Tenant registered in infrastructure database'
+        THEN '[OK] PASS: Tenant registered in infrastructure database'
         ELSE '✗ FAIL: Tenant not found in infrastructure registry'
     END AS check_result;
 
@@ -57,7 +57,7 @@ WITH expected_schemas AS (
 SELECT
     es.schema_name,
     CASE
-        WHEN s.SCHEMA_NAME IS NOT NULL THEN '✓ PASS'
+        WHEN s.SCHEMA_NAME IS NOT NULL THEN '[OK] PASS'
         ELSE '✗ FAIL'
     END AS status
 FROM expected_schemas es
@@ -87,7 +87,7 @@ WITH expected_tables AS (
 SELECT
     et.schema_name || '.' || et.table_name AS full_table_name,
     CASE
-        WHEN t.TABLE_NAME IS NOT NULL THEN '✓ PASS'
+        WHEN t.TABLE_NAME IS NOT NULL THEN '[OK] PASS'
         ELSE '✗ FAIL'
     END AS status,
     COALESCE(t.ROW_COUNT, 0) AS row_count
@@ -104,6 +104,7 @@ ORDER BY et.schema_name, et.table_name;
 
 SELECT '4. STREAM VALIDATION' AS section;
 
+-- Note: Using ACCOUNT_USAGE.STREAMS (has ~2hr latency for new streams)
 WITH expected_streams AS (
     SELECT 'RAW' AS schema_name, 'SENSOR_READINGS_STREAM' AS stream_name
     UNION ALL SELECT 'RAW', 'DEVICE_STATUS_STREAM'
@@ -115,15 +116,16 @@ WITH expected_streams AS (
 SELECT
     es.schema_name || '.' || es.stream_name AS full_stream_name,
     CASE
-        WHEN s.NAME IS NOT NULL THEN '✓ PASS'
+        WHEN s.STREAM_NAME IS NOT NULL THEN '[OK] PASS'
         ELSE '✗ FAIL'
     END AS status,
-    COALESCE(s.STALE, 'N/A') AS is_stale
+    COALESCE(CAST(s.STALE AS VARCHAR), 'N/A') AS is_stale
 FROM expected_streams es
-LEFT JOIN SNOWFLAKE.INFORMATION_SCHEMA.STREAMS s
-    ON s.TABLE_SCHEMA = es.schema_name
-    AND s.NAME = es.stream_name
-    AND s.TABLE_CATALOG = &database_name
+LEFT JOIN SNOWFLAKE.ACCOUNT_USAGE.STREAMS s
+    ON s.SCHEMA_NAME = es.schema_name
+    AND s.STREAM_NAME = es.stream_name
+    AND s.DATABASE_NAME = UPPER(&database_name)
+    AND s.DELETED IS NULL
 ORDER BY es.schema_name, es.stream_name;
 
 -- ============================================================================
@@ -132,6 +134,7 @@ ORDER BY es.schema_name, es.stream_name;
 
 SELECT '5. TASK VALIDATION' AS section;
 
+-- Note: Using ACCOUNT_USAGE.TASKS (has ~2hr latency for new tasks)
 WITH expected_tasks AS (
     SELECT 'RAW' AS schema_name, 'TASK_NORMALIZE_SENSOR_READINGS' AS task_name
     UNION ALL SELECT 'RAW', 'TASK_PROCESS_DEVICE_STATUS'
@@ -142,27 +145,30 @@ WITH expected_tasks AS (
 SELECT
     et.schema_name || '.' || et.task_name AS full_task_name,
     CASE
-        WHEN t.NAME IS NOT NULL THEN '✓ PASS'
+        WHEN t.NAME IS NOT NULL THEN '[OK] PASS'
         ELSE '✗ FAIL'
     END AS status,
     COALESCE(t.STATE, 'NOT FOUND') AS task_state,
     COALESCE(t.SCHEDULE, 'N/A') AS schedule
 FROM expected_tasks et
-LEFT JOIN SNOWFLAKE.INFORMATION_SCHEMA.TASKS t
+LEFT JOIN SNOWFLAKE.ACCOUNT_USAGE.TASKS t
     ON t.SCHEMA_NAME = et.schema_name
     AND t.NAME = et.task_name
-    AND t.DATABASE_NAME = &database_name
+    AND t.DATABASE_NAME = UPPER(&database_name)
+    AND t.DELETED IS NULL
 ORDER BY et.schema_name, et.task_name;
 
 -- Check if tasks are running
+-- Note: For newly created tasks, use SHOW TASKS instead (ACCOUNT_USAGE has ~2hr latency)
 SELECT
     CASE
         WHEN COUNT(CASE WHEN STATE = 'started' THEN 1 END) = COUNT(*)
-        THEN '✓ PASS: All tasks are running'
+        THEN '[OK] PASS: All tasks are running'
         ELSE '⚠ WARNING: ' || (COUNT(*) - COUNT(CASE WHEN STATE = 'started' THEN 1 END)) || ' tasks are suspended'
     END AS task_status_check
-FROM SNOWFLAKE.INFORMATION_SCHEMA.TASKS
-WHERE DATABASE_NAME = &database_name;
+FROM SNOWFLAKE.ACCOUNT_USAGE.TASKS
+WHERE DATABASE_NAME = UPPER(&database_name)
+  AND DELETED IS NULL;
 
 -- ============================================================================
 -- 6. Dynamic Table Validation
@@ -181,7 +187,7 @@ WITH expected_dynamic_tables AS (
 SELECT
     ed.schema_name || '.' || ed.dt_name AS full_dt_name,
     CASE
-        WHEN dt.NAME IS NOT NULL THEN '✓ PASS'
+        WHEN dt.NAME IS NOT NULL THEN '[OK] PASS'
         ELSE '✗ FAIL'
     END AS status,
     COALESCE(dt.SCHEDULING_STATE, 'NOT FOUND') AS scheduling_state,
@@ -210,7 +216,7 @@ WITH expected_roles AS (
 SELECT
     er.role_name,
     CASE
-        WHEN r.NAME IS NOT NULL THEN '✓ PASS'
+        WHEN r.NAME IS NOT NULL THEN '[OK] PASS'
         ELSE '✗ FAIL'
     END AS status
 FROM expected_roles er
@@ -243,7 +249,7 @@ WITH expected_views AS (
 SELECT
     ev.schema_name || '.' || ev.view_name AS full_view_name,
     CASE
-        WHEN v.TABLE_NAME IS NOT NULL THEN '✓ PASS'
+        WHEN v.TABLE_NAME IS NOT NULL THEN '[OK] PASS'
         ELSE '✗ FAIL'
     END AS status
 FROM expected_views ev
@@ -261,7 +267,7 @@ SELECT '9. PROCEDURE VALIDATION' AS section;
 
 SELECT
     PROCEDURE_SCHEMA || '.' || PROCEDURE_NAME AS procedure_name,
-    '✓ EXISTS' AS status,
+    '[OK] EXISTS' AS status,
     ARGUMENT_SIGNATURE
 FROM SNOWFLAKE.INFORMATION_SCHEMA.PROCEDURES
 WHERE PROCEDURE_CATALOG = &database_name
@@ -294,7 +300,7 @@ SELECT
     GRANTEE_NAME AS role_name,
     NAME AS warehouse_name,
     PRIVILEGE,
-    '✓ GRANTED' AS status
+    '[OK] GRANTED' AS status
 FROM SNOWFLAKE.ACCOUNT_USAGE.GRANTS_TO_ROLES
 WHERE GRANTEE_NAME LIKE 'smdh_tenant_' || '&tenant_id' || '%'
     AND GRANTED_ON = 'WAREHOUSE'
@@ -330,7 +336,7 @@ UNION ALL SELECT 'Database: smdh_tenant_' || '&tenant_id'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Validation Summary:'
 UNION ALL SELECT '  • Review the check results above'
-UNION ALL SELECT '  • All items should show ✓ PASS or ✓ EXISTS'
+UNION ALL SELECT '  • All items should show [OK] PASS or [OK] EXISTS'
 UNION ALL SELECT '  • Address any ✗ FAIL or ⚠ WARNING items'
 UNION ALL SELECT ''
 UNION ALL SELECT 'If all checks pass, the tenant is ready for data ingestion.'

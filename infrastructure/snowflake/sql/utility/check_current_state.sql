@@ -4,7 +4,7 @@ USE ROLE ACCOUNTADMIN;
 -- Show all SMDH databases
 SHOW DATABASES LIKE 'smdh%';
 
--- Check if tenant database exists
+-- Check if test tenant database exists
 SELECT COUNT(*) as tenant_db_exists
 FROM INFORMATION_SCHEMA.DATABASES
 WHERE DATABASE_NAME = 'SMDH_TENANT_TEST_TENANT';

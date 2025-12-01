@@ -82,14 +82,26 @@ variable "alert_email" {
 }
 
 variable "tenants" {
-  description = "Map of tenant configurations"
+  description = <<-EOT
+    Map of tenant configurations. Each tenant can specify:
+    - name: Display name for the tenant
+    - num_sites: Number of manufacturing sites
+    - deployment_mode: "gateway" (Milesight UG65 with built-in NS) or "network_server" (ChirpStack)
+    - network_server_name: Name of the network server (only used when deployment_mode = "network_server")
+    - retention_days: Data retention in Snowflake (days)
+    - warehouse_size: Snowflake warehouse size
+    - contact_email: Alert notification email
+    - sensors_per_site: Expected sensors per site for capacity planning
+  EOT
   type = map(object({
-    name              = string
-    num_sites         = number
-    retention_days    = optional(number, 730)
-    warehouse_size    = optional(string, "SMALL")
-    contact_email     = optional(string, "")
-    sensors_per_site  = optional(number, 10)
+    name                = string
+    num_sites           = number
+    deployment_mode     = optional(string, "gateway")
+    network_server_name = optional(string, "chirpstack")
+    retention_days      = optional(number, 730)
+    warehouse_size      = optional(string, "SMALL")
+    contact_email       = optional(string, "")
+    sensors_per_site    = optional(number, 10)
   }))
   default = {}
 
@@ -99,6 +111,14 @@ variable "tenants" {
       can(regex("^[a-z0-9_]+$", tenant_id))
     ])
     error_message = "Tenant IDs must be lowercase alphanumeric with underscores only"
+  }
+
+  validation {
+    condition = alltrue([
+      for tenant_id, tenant in var.tenants :
+      contains(["gateway", "network_server"], tenant.deployment_mode)
+    ])
+    error_message = "Deployment mode must be either 'gateway' or 'network_server'"
   }
 }
 

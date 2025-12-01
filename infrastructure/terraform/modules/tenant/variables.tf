@@ -41,6 +41,29 @@ variable "lorawan_thing_type_name" {
   type        = string
 }
 
+variable "network_server_thing_type_name" {
+  description = "Name of the Network Server thing type (ChirpStack or similar)"
+  type        = string
+  default     = "NetworkServer"
+}
+
+variable "deployment_mode" {
+  description = "Device deployment mode: 'gateway' for Milesight UG65 with built-in NS (one gateway per site), 'network_server' for ChirpStack or similar centralized NS (one NS per tenant)"
+  type        = string
+  default     = "gateway"
+
+  validation {
+    condition     = contains(["gateway", "network_server"], var.deployment_mode)
+    error_message = "Deployment mode must be either 'gateway' or 'network_server'"
+  }
+}
+
+variable "network_server_name" {
+  description = "Name/identifier for the network server (only used when deployment_mode = 'network_server')"
+  type        = string
+  default     = "chirpstack"
+}
+
 variable "iot_kinesis_role_arn" {
   description = "ARN of the IAM role for IoT Rules to write to Kinesis"
   type        = string

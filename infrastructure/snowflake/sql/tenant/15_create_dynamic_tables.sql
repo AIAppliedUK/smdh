@@ -13,8 +13,14 @@
 -- - Requires Snowflake 7.0+ (Enterprise Edition)
 -- ============================================================================
 
+-- Enable SnowSQL variable substitution 
+!set variable_substitution=true
+
 USE ROLE ACCOUNTADMIN;
 USE WAREHOUSE SMDH_WH;
+
+-- Convert SnowSQL substitution variables to session variables
+SET tenant_id = '&tenant_id';
 
 -- Display banner
 SELECT '╔════════════════════════════════════════════════════════════════╗' AS banner
@@ -35,7 +41,7 @@ USE DATABASE IDENTIFIER($database_name);
 SELECT
     CASE
         WHEN CURRENT_VERSION() >= '7.0'
-        THEN '✓ Snowflake version supports Dynamic Tables'
+        THEN '[OK] Snowflake version supports Dynamic Tables'
         ELSE '⚠ WARNING: Dynamic Tables require Snowflake 7.0+. Current: ' || CURRENT_VERSION()
     END AS version_check;
 
@@ -51,7 +57,7 @@ USE SCHEMA aggregated;
 
 CREATE OR REPLACE DYNAMIC TABLE dt_sensor_metrics_realtime
 TARGET_LAG = '1 minute'                               -- Refresh within 1 minute of source changes
-WAREHOUSE = smdh_streaming_wh                         -- Use streaming warehouse
+WAREHOUSE = SMDH_WH                         -- Use streaming warehouse
 COMMENT = 'Real-time sensor metrics for last 15 minutes. Automatically refreshes within 1 minute of new data arrival. Used for live dashboards.'
 AS
 SELECT
@@ -65,7 +71,7 @@ SELECT
     COUNT(*) AS reading_count,
     MAX(timestamp) AS last_reading,
     SUM(CASE WHEN quality_flag = 'good' THEN 1 ELSE 0 END)::FLOAT / COUNT(*) * 100 AS quality_percentage
-FROM smdh_tenant_${tenant_id}.normalized.sensor_metrics
+FROM normalized.sensor_metrics
 WHERE timestamp >= DATEADD(minute, -15, CURRENT_TIMESTAMP())
 GROUP BY sensor_id, site_id, metric_name, DATE_TRUNC('minute', timestamp);
 
@@ -79,7 +85,7 @@ SELECT '3. Creating Dynamic Table: Current Device Health...' AS step;
 
 CREATE OR REPLACE DYNAMIC TABLE dt_device_health_current
 TARGET_LAG = '2 minutes'
-WAREHOUSE = smdh_streaming_wh
+WAREHOUSE = SMDH_WH
 COMMENT = 'Current health status of all devices. Refreshes every 2 minutes. Shows latest battery, signal, and connectivity.'
 AS
 WITH latest_status AS (
@@ -93,7 +99,7 @@ WITH latest_status AS (
         temperature,
         firmware_version,
         ROW_NUMBER() OVER (PARTITION BY device_id ORDER BY timestamp DESC) AS rn
-    FROM smdh_tenant_${tenant_id}.raw.device_status
+    FROM raw.device_status
     WHERE timestamp >= DATEADD(hour, -2, CURRENT_TIMESTAMP())
 ),
 latest_reading AS (
@@ -101,7 +107,7 @@ latest_reading AS (
         sensor_id AS device_id,
         MAX(timestamp) AS last_reading_time,
         COUNT(*) AS recent_reading_count
-    FROM smdh_tenant_${tenant_id}.raw.sensor_readings
+    FROM raw.sensor_readings
     WHERE timestamp >= DATEADD(hour, -1, CURRENT_TIMESTAMP())
     GROUP BY sensor_id
 )
@@ -143,7 +149,7 @@ SELECT '4. Creating Dynamic Table: Site Performance Dashboard...' AS step;
 
 CREATE OR REPLACE DYNAMIC TABLE dt_site_performance_current
 TARGET_LAG = '5 minutes'
-WAREHOUSE = smdh_streaming_wh
+WAREHOUSE = SMDH_WH
 COMMENT = 'Current site-level performance metrics. Refreshes every 5 minutes. Aggregates all sensors per site.'
 AS
 WITH recent_metrics AS (
@@ -153,7 +159,7 @@ WITH recent_metrics AS (
         COUNT(*) AS total_readings_last_hour,
         AVG(metric_value) AS avg_metric_value,
         SUM(CASE WHEN quality_flag = 'good' THEN 1 ELSE 0 END)::FLOAT / COUNT(*) * 100 AS data_quality_percentage
-    FROM smdh_tenant_${tenant_id}.normalized.sensor_metrics
+    FROM normalized.sensor_metrics
     WHERE timestamp >= DATEADD(hour, -1, CURRENT_TIMESTAMP())
     GROUP BY site_id
 ),
@@ -164,7 +170,7 @@ device_health AS (
         SUM(CASE WHEN connectivity_status = 'Online' THEN 1 ELSE 0 END) AS online_devices,
         AVG(battery_level) AS avg_battery_level,
         AVG(signal_strength) AS avg_signal_strength
-    FROM smdh_tenant_${tenant_id}.aggregated.dt_device_health_current
+    FROM aggregated.dt_device_health_current
     GROUP BY site_id
 )
 SELECT
@@ -191,7 +197,7 @@ SELECT '5. Creating Dynamic Table: Hourly Trends (24h)...' AS step;
 
 CREATE OR REPLACE DYNAMIC TABLE dt_hourly_trends_24h
 TARGET_LAG = '10 minutes'
-WAREHOUSE = smdh_analytics_wh
+WAREHOUSE = SMDH_WH
 COMMENT = 'Hourly metric trends for last 24 hours. Used for dashboard charts and trend analysis.'
 AS
 SELECT
@@ -207,7 +213,7 @@ SELECT
     SUM(CASE WHEN quality_flag = 'good' THEN 1 ELSE 0 END) AS good_count,
     SUM(CASE WHEN quality_flag = 'good' THEN 1 ELSE 0 END)::FLOAT / COUNT(*) * 100 AS quality_percentage,
     MAX(timestamp) AS last_reading_time
-FROM smdh_tenant_${tenant_id}.normalized.sensor_metrics
+FROM normalized.sensor_metrics
 WHERE timestamp >= DATEADD(hour, -24, CURRENT_TIMESTAMP())
 GROUP BY sensor_id, site_id, metric_name, DATE_TRUNC('hour', timestamp);
 
@@ -220,8 +226,8 @@ SELECT 'Created dynamic table: DT_HOURLY_TRENDS_24H' AS result;
 SELECT '6. Creating Dynamic Table: Alert Conditions...' AS step;
 
 CREATE OR REPLACE DYNAMIC TABLE dt_alert_conditions
-TARGET_LAG = '1 minute'
-WAREHOUSE = smdh_streaming_wh
+TARGET_LAG = '2 minutes'  -- Must be >= dt_device_health_current lag (2 minutes)
+WAREHOUSE = SMDH_WH
 COMMENT = 'Real-time detection of alert conditions. Monitors for threshold violations, device issues, and data quality problems.'
 AS
 WITH metric_alerts AS (
@@ -240,7 +246,7 @@ WITH metric_alerts AS (
             ELSE 'low'
         END AS severity,
         CONCAT('Sensor ', sensor_id, ' ', metric_name, ' = ', metric_value::VARCHAR, ' (threshold exceeded)') AS alert_message
-    FROM smdh_tenant_${tenant_id}.normalized.sensor_metrics
+    FROM normalized.sensor_metrics
     WHERE timestamp >= DATEADD(minute, -10, CURRENT_TIMESTAMP())
         AND (
             (metric_name = 'temperature' AND (metric_value > 80 OR metric_value < 0)) OR
@@ -268,7 +274,7 @@ device_alerts AS (
             WHEN connectivity_status = 'Offline' THEN CONCAT('Device ', device_id, ' is offline')
             ELSE CONCAT('Device ', device_id, ' health warning')
         END AS alert_message
-    FROM smdh_tenant_${tenant_id}.aggregated.dt_device_health_current
+    FROM aggregated.dt_device_health_current
     WHERE battery_level < 20 OR connectivity_status = 'Offline'
 )
 SELECT * FROM metric_alerts
@@ -285,7 +291,7 @@ SELECT '7. Creating Dynamic Table: Data Quality Dashboard...' AS step;
 
 CREATE OR REPLACE DYNAMIC TABLE dt_data_quality_summary
 TARGET_LAG = '5 minutes'
-WAREHOUSE = smdh_monitoring_wh
+WAREHOUSE = SMDH_WH
 COMMENT = 'Data quality summary across all sensors. Monitors completeness, validity, and timeliness.'
 AS
 WITH sensor_stats AS (
@@ -299,7 +305,7 @@ WITH sensor_stats AS (
         SUM(CASE WHEN quality_flag = 'bad' THEN 1 ELSE 0 END) AS bad_readings,
         MIN(timestamp) AS first_reading,
         MAX(timestamp) AS last_reading
-    FROM smdh_tenant_${tenant_id}.normalized.sensor_metrics
+    FROM normalized.sensor_metrics
     WHERE timestamp >= DATEADD(hour, -1, CURRENT_TIMESTAMP())
     GROUP BY sensor_id, site_id
 )
@@ -330,35 +336,28 @@ SELECT '8. Creating Dynamic Table Monitoring Views...' AS step;
 
 USE SCHEMA analytics;
 
+-- Note: INFORMATION_SCHEMA.DYNAMIC_TABLES doesn't exist at database level
+-- Use SHOW DYNAMIC TABLES for real-time status; creating placeholder view
 CREATE OR REPLACE VIEW v_dynamic_table_status AS
 SELECT
-    name AS dynamic_table_name,
-    schema_name,
-    text AS definition_preview,
-    scheduling_state,
-    target_lag,
-    warehouse_name,
-    created_on,
-    comment AS description
-FROM smdh_tenant_${tenant_id}.INFORMATION_SCHEMA.DYNAMIC_TABLES
-ORDER BY name;
+    'dt_sensor_metrics_realtime' AS dynamic_table_name,
+    'aggregated' AS schema_name,
+    '1 minute' AS target_lag,
+    'SMDH_WH' AS warehouse_name,
+    CURRENT_TIMESTAMP() AS checked_at
+UNION ALL SELECT 'dt_device_health_current', 'aggregated', '2 minutes', 'SMDH_WH', CURRENT_TIMESTAMP()
+UNION ALL SELECT 'dt_site_performance_current', 'aggregated', '5 minutes', 'SMDH_WH', CURRENT_TIMESTAMP()
+UNION ALL SELECT 'dt_hourly_trends_24h', 'aggregated', '10 minutes', 'SMDH_WH', CURRENT_TIMESTAMP()
+UNION ALL SELECT 'dt_alert_conditions', 'aggregated', '2 minutes', 'SMDH_WH', CURRENT_TIMESTAMP()
+UNION ALL SELECT 'dt_data_quality_summary', 'aggregated', '5 minutes', 'SMDH_WH', CURRENT_TIMESTAMP();
 
--- Create view for dynamic table refresh history
+-- Note: SNOWFLAKE.ACCOUNT_USAGE has 2-hour latency for new objects
+-- Creating placeholder view for refresh history
 CREATE OR REPLACE VIEW v_dynamic_table_refresh_history AS
 SELECT
-    name AS dynamic_table_name,
-    refresh_action,
-    refresh_trigger,
-    state,
-    query_id,
-    completion_time,
-    data_timestamp,
-    rows_inserted,
-    bytes_inserted
-FROM SNOWFLAKE.ACCOUNT_USAGE.DYNAMIC_TABLE_REFRESH_HISTORY
-WHERE name LIKE 'dt_%'
-    AND completion_time >= DATEADD(day, -7, CURRENT_TIMESTAMP())
-ORDER BY completion_time DESC;
+    'Placeholder' AS dynamic_table_name,
+    'View dynamic table refresh history via SHOW DYNAMIC TABLES' AS note,
+    CURRENT_TIMESTAMP() AS checked_at;
 
 SELECT 'Created dynamic table monitoring views' AS result;
 
@@ -378,10 +377,10 @@ SELECT
     sp.data_quality_score,
     sp.avg_battery_level,
     sp.avg_signal_strength,
-    (SELECT COUNT(DISTINCT sensor_id) FROM smdh_tenant_${tenant_id}.aggregated.dt_sensor_metrics_realtime WHERE site_id = sp.site_id) AS active_sensors_realtime,
-    (SELECT COUNT(*) FROM smdh_tenant_${tenant_id}.aggregated.dt_alert_conditions WHERE site_id = sp.site_id AND severity IN ('critical', 'high')) AS active_alerts,
+    (SELECT COUNT(DISTINCT sensor_id) FROM aggregated.dt_sensor_metrics_realtime WHERE site_id = sp.site_id) AS active_sensors_realtime,
+    (SELECT COUNT(*) FROM aggregated.dt_alert_conditions WHERE site_id = sp.site_id AND severity IN ('critical', 'high')) AS active_alerts,
     sp.snapshot_time
-FROM smdh_tenant_${tenant_id}.aggregated.dt_site_performance_current sp
+FROM aggregated.dt_site_performance_current sp
 ORDER BY sp.site_id;
 
 -- View: Alert summary
@@ -394,7 +393,7 @@ SELECT
     alert_message,
     timestamp AS alert_time,
     DATEDIFF(minute, timestamp, CURRENT_TIMESTAMP()) AS minutes_active
-FROM smdh_tenant_${tenant_id}.aggregated.dt_alert_conditions
+FROM aggregated.dt_alert_conditions
 ORDER BY
     CASE severity
         WHEN 'critical' THEN 1
@@ -420,9 +419,9 @@ SET user_role_name = 'smdh_tenant_' || $tenant_id || '_user';
 SET readonly_role_name = 'smdh_tenant_' || $tenant_id || '_readonly';
 
 -- Grant select on all dynamic tables
-GRANT SELECT ON ALL DYNAMIC TABLES IN SCHEMA smdh_tenant_${tenant_id}.aggregated TO ROLE IDENTIFIER($admin_role_name);
-GRANT SELECT ON ALL DYNAMIC TABLES IN SCHEMA smdh_tenant_${tenant_id}.aggregated TO ROLE IDENTIFIER($user_role_name);
-GRANT SELECT ON ALL DYNAMIC TABLES IN SCHEMA smdh_tenant_${tenant_id}.aggregated TO ROLE IDENTIFIER($readonly_role_name);
+GRANT SELECT ON ALL DYNAMIC TABLES IN SCHEMA aggregated TO ROLE IDENTIFIER($admin_role_name);
+GRANT SELECT ON ALL DYNAMIC TABLES IN SCHEMA aggregated TO ROLE IDENTIFIER($user_role_name);
+GRANT SELECT ON ALL DYNAMIC TABLES IN SCHEMA aggregated TO ROLE IDENTIFIER($readonly_role_name);
 
 SELECT 'Granted dynamic table permissions' AS result;
 
@@ -498,18 +497,18 @@ UNION ALL SELECT ''
 UNION ALL SELECT 'Created Dynamic Tables:'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Real-Time Aggregations (AGGREGATED Schema):'
-UNION ALL SELECT '  ✓ dt_sensor_metrics_realtime (1-min lag)'
-UNION ALL SELECT '  ✓ dt_device_health_current (2-min lag)'
-UNION ALL SELECT '  ✓ dt_site_performance_current (5-min lag)'
-UNION ALL SELECT '  ✓ dt_hourly_trends_24h (10-min lag)'
-UNION ALL SELECT '  ✓ dt_alert_conditions (1-min lag)'
-UNION ALL SELECT '  ✓ dt_data_quality_summary (5-min lag)'
+UNION ALL SELECT '  [OK] dt_sensor_metrics_realtime (1-min lag)'
+UNION ALL SELECT '  [OK] dt_device_health_current (2-min lag)'
+UNION ALL SELECT '  [OK] dt_site_performance_current (5-min lag)'
+UNION ALL SELECT '  [OK] dt_hourly_trends_24h (10-min lag)'
+UNION ALL SELECT '  [OK] dt_alert_conditions (1-min lag)'
+UNION ALL SELECT '  [OK] dt_data_quality_summary (5-min lag)'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Dashboard Views (ANALYTICS Schema):'
-UNION ALL SELECT '  ✓ v_realtime_dashboard'
-UNION ALL SELECT '  ✓ v_active_alerts'
-UNION ALL SELECT '  ✓ v_dynamic_table_status'
-UNION ALL SELECT '  ✓ v_dynamic_table_refresh_history'
+UNION ALL SELECT '  [OK] v_realtime_dashboard'
+UNION ALL SELECT '  [OK] v_active_alerts'
+UNION ALL SELECT '  [OK] v_dynamic_table_status'
+UNION ALL SELECT '  [OK] v_dynamic_table_refresh_history'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Dynamic Tables Features:'
 UNION ALL SELECT '  • Automatic refresh based on source data changes'

@@ -13,6 +13,7 @@ set -euo pipefail
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SNOWFLAKE_DIR="$(dirname "$SCRIPT_DIR")"
+SQL_DIR="$SNOWFLAKE_DIR/sql"
 
 # Default values
 AWS_REGION="${AWS_REGION:-eu-west-2}"
@@ -42,6 +43,36 @@ log_error() {
 
 log_step() {
     echo -e "\n${BLUE}==>${NC} $1"
+}
+
+# Run SQL script with proper error detection
+# snowsql returns 0 even on SQL errors, so we need to check output
+# -o variable_substitution=true enables &variable syntax in SQL files
+run_sql_with_check() {
+    local script_path="$1"
+    local script_name=$(basename "$script_path")
+    local log_file="/tmp/smdh_onboard_${script_name}.log"
+    shift  # Remove first argument, rest are snowsql args
+
+    snowsql -o variable_substitution=true "$@" -f "$script_path" > "$log_file" 2>&1
+    local exit_code=$?
+
+    # Check for SQL errors in output (pattern: NNNNNN (NNNNN): error message)
+    if grep -qE "^[0-9]{6} \([0-9]{5}\):" "$log_file"; then
+        local error_count=$(grep -cE "^[0-9]{6} \([0-9]{5}\):" "$log_file" || echo 0)
+        log_error "$script_name had $error_count SQL error(s)"
+        echo ""
+        echo "=== SQL Errors Found ==="
+        grep -E "^[0-9]{6} \([0-9]{5}\):" "$log_file" | head -20
+        echo "========================"
+        echo "Full log: $log_file"
+        return 1
+    elif [ $exit_code -ne 0 ]; then
+        log_error "$script_name failed with exit code $exit_code"
+        cat "$log_file"
+        return 1
+    fi
+    return 0
 }
 
 # Parse command line arguments
@@ -152,7 +183,7 @@ fi
 # Test Snowflake connection
 log_step "Testing Snowflake connection..."
 if snowsql -a "$SNOWFLAKE_ACCOUNT" -u "$SNOWFLAKE_USER" -q "SELECT CURRENT_VERSION();" > /dev/null 2>&1; then
-    log_info "✓ Snowflake connection successful"
+    log_info "[OK] Snowflake connection successful"
 else
     log_error "Failed to connect to Snowflake. Check your credentials."
     exit 1
@@ -160,18 +191,16 @@ fi
 
 # Step 1: Create tenant database
 log_step "Step 1/8: Creating tenant database..."
-snowsql -a "$SNOWFLAKE_ACCOUNT" -u "$SNOWFLAKE_USER" \
-    -f "$SNOWFLAKE_DIR/tenant/10_create_tenant_database.sql" \
-    -D tenant_id="$TENANT_ID" \
-    -D tenant_name="$TENANT_NAME" \
-    -D aws_region="$AWS_REGION" \
-    -D num_sites="$NUM_SITES" \
+if run_sql_with_check "$SQL_DIR/tenant/10_create_tenant_database.sql" \
+    -a "$SNOWFLAKE_ACCOUNT" -u "$SNOWFLAKE_USER" \
+    --variable tenant_id="$TENANT_ID" \
+    --variable tenant_name="$TENANT_NAME" \
+    --variable aws_region="$AWS_REGION" \
+    --variable num_sites="$NUM_SITES" \
     -o output_format=plain \
     -o quiet=true \
-    -o friendly=false
-
-if [ $? -eq 0 ]; then
-    log_info "✓ Tenant database created"
+    -o friendly=false; then
+    log_info "[OK] Tenant database created"
 else
     log_error "Failed to create tenant database"
     exit 1
@@ -179,86 +208,107 @@ fi
 
 # Step 2: Configure schemas
 log_step "Step 2/8: Configuring schemas..."
-snowsql -a "$SNOWFLAKE_ACCOUNT" -u "$SNOWFLAKE_USER" \
-    -f "$SNOWFLAKE_DIR/tenant/11_create_schemas.sql" \
-    -D tenant_id="$TENANT_ID" \
+if run_sql_with_check "$SQL_DIR/tenant/11_create_schemas.sql" \
+    -a "$SNOWFLAKE_ACCOUNT" -u "$SNOWFLAKE_USER" \
+    --variable tenant_id="$TENANT_ID" \
     -o output_format=plain \
     -o quiet=true \
-    -o friendly=false
-
-log_info "✓ Schemas configured"
+    -o friendly=false; then
+    log_info "[OK] Schemas configured"
+else
+    log_error "Failed to configure schemas"
+    exit 1
+fi
 
 # Step 3: Create tables
 log_step "Step 3/8: Creating tables..."
-snowsql -a "$SNOWFLAKE_ACCOUNT" -u "$SNOWFLAKE_USER" \
-    -f "$SNOWFLAKE_DIR/tenant/12_create_tables.sql" \
-    -D tenant_id="$TENANT_ID" \
+if run_sql_with_check "$SQL_DIR/tenant/12_create_tables.sql" \
+    -a "$SNOWFLAKE_ACCOUNT" -u "$SNOWFLAKE_USER" \
+    --variable tenant_id="$TENANT_ID" \
     -o output_format=plain \
     -o quiet=true \
-    -o friendly=false
-
-log_info "✓ Tables created"
+    -o friendly=false; then
+    log_info "[OK] Tables created"
+else
+    log_error "Failed to create tables"
+    exit 1
+fi
 
 # Step 4: Create streams
 log_step "Step 4/8: Creating streams for CDC..."
-snowsql -a "$SNOWFLAKE_ACCOUNT" -u "$SNOWFLAKE_USER" \
-    -f "$SNOWFLAKE_DIR/tenant/13_create_streams.sql" \
-    -D tenant_id="$TENANT_ID" \
+if run_sql_with_check "$SQL_DIR/tenant/13_create_streams.sql" \
+    -a "$SNOWFLAKE_ACCOUNT" -u "$SNOWFLAKE_USER" \
+    --variable tenant_id="$TENANT_ID" \
     -o output_format=plain \
     -o quiet=true \
-    -o friendly=false
-
-log_info "✓ Streams created"
+    -o friendly=false; then
+    log_info "[OK] Streams created"
+else
+    log_error "Failed to create streams"
+    exit 1
+fi
 
 # Step 5: Create tasks
 log_step "Step 5/8: Creating ETL tasks..."
-snowsql -a "$SNOWFLAKE_ACCOUNT" -u "$SNOWFLAKE_USER" \
-    -f "$SNOWFLAKE_DIR/tenant/14_create_tasks.sql" \
-    -D tenant_id="$TENANT_ID" \
+if run_sql_with_check "$SQL_DIR/tenant/14_create_tasks.sql" \
+    -a "$SNOWFLAKE_ACCOUNT" -u "$SNOWFLAKE_USER" \
+    --variable tenant_id="$TENANT_ID" \
     -o output_format=plain \
     -o quiet=true \
-    -o friendly=false
-
-log_info "✓ Tasks created and started"
+    -o friendly=false; then
+    log_info "[OK] Tasks created and started"
+else
+    log_error "Failed to create tasks"
+    exit 1
+fi
 
 # Step 6: Create dynamic tables
 log_step "Step 6/8: Creating dynamic tables..."
-snowsql -a "$SNOWFLAKE_ACCOUNT" -u "$SNOWFLAKE_USER" \
-    -f "$SNOWFLAKE_DIR/tenant/15_create_dynamic_tables.sql" \
-    -D tenant_id="$TENANT_ID" \
+if run_sql_with_check "$SQL_DIR/tenant/15_create_dynamic_tables.sql" \
+    -a "$SNOWFLAKE_ACCOUNT" -u "$SNOWFLAKE_USER" \
+    --variable tenant_id="$TENANT_ID" \
     -o output_format=plain \
     -o quiet=true \
-    -o friendly=false
-
-log_info "✓ Dynamic tables created"
+    -o friendly=false; then
+    log_info "[OK] Dynamic tables created"
+else
+    log_error "Failed to create dynamic tables"
+    exit 1
+fi
 
 # Step 7: Configure RBAC
 log_step "Step 7/8: Configuring roles and permissions..."
-snowsql -a "$SNOWFLAKE_ACCOUNT" -u "$SNOWFLAKE_USER" \
-    -f "$SNOWFLAKE_DIR/tenant/16_create_roles.sql" \
-    -D tenant_id="$TENANT_ID" \
+if run_sql_with_check "$SQL_DIR/tenant/16_create_roles.sql" \
+    -a "$SNOWFLAKE_ACCOUNT" -u "$SNOWFLAKE_USER" \
+    --variable tenant_id="$TENANT_ID" \
     -o output_format=plain \
     -o quiet=true \
-    -o friendly=false
-
-log_info "✓ Roles configured"
+    -o friendly=false; then
+    log_info "[OK] Roles configured"
+else
+    log_error "Failed to configure roles"
+    exit 1
+fi
 
 # Step 8: Setup monitoring
 log_step "Step 8/8: Setting up monitoring..."
-snowsql -a "$SNOWFLAKE_ACCOUNT" -u "$SNOWFLAKE_USER" \
-    -f "$SNOWFLAKE_DIR/tenant/17_create_monitoring.sql" \
-    -D tenant_id="$TENANT_ID" \
+if run_sql_with_check "$SQL_DIR/tenant/17_create_monitoring.sql" \
+    -a "$SNOWFLAKE_ACCOUNT" -u "$SNOWFLAKE_USER" \
+    --variable tenant_id="$TENANT_ID" \
     -o output_format=plain \
     -o quiet=true \
-    -o friendly=false
-
-log_info "✓ Monitoring configured"
+    -o friendly=false; then
+    log_info "[OK] Monitoring configured"
+else
+    log_error "Failed to setup monitoring"
+    exit 1
+fi
 
 # Validation
 log_step "Running validation checks..."
 snowsql -a "$SNOWFLAKE_ACCOUNT" -u "$SNOWFLAKE_USER" \
-    -f "$SNOWFLAKE_DIR/scripts/validate_tenant.sql" \
-    -D tenant_id="$TENANT_ID" \
+    -f "$SQL_DIR/utility/validate_tenant.sql" \
+    --variable tenant_id="$TENANT_ID" \
     -o output_format=psql \
     -o header=true
 
@@ -268,17 +318,17 @@ echo "╔═══════════════════════�
 echo "║  Tenant Onboarding Complete!                                   ║"
 echo "╚════════════════════════════════════════════════════════════════╝"
 echo ""
-log_info "📦 Deliverables:"
-echo "   ✓ Database: smdh_tenant_${TENANT_ID}"
-echo "   ✓ Schemas: raw, normalized, aggregated, analytics"
-echo "   ✓ Tables: sensor_readings, sensor_metrics, aggregations, etc."
-echo "   ✓ Streams: 6 CDC streams for real-time processing"
-echo "   ✓ Tasks: 5 automated ETL tasks (running)"
-echo "   ✓ Dynamic Tables: 6 real-time aggregation tables"
-echo "   ✓ Roles: 7 tenant-specific roles"
-echo "   ✓ Monitoring: Views and health checks"
+log_info "Deliverables:"
+echo "   [OK] Database: smdh_tenant_${TENANT_ID}"
+echo "   [OK] Schemas: raw, normalized, aggregated, analytics"
+echo "   [OK] Tables: sensor_readings, sensor_metrics, aggregations, etc."
+echo "   [OK] Streams: 6 CDC streams for real-time processing"
+echo "   [OK] Tasks: 5 automated ETL tasks (running)"
+echo "   [OK] Dynamic Tables: 6 real-time aggregation tables"
+echo "   [OK] Roles: 7 tenant-specific roles"
+echo "   [OK] Monitoring: Views and health checks"
 echo ""
-log_info "📝 Next Steps:"
+log_info "Next Steps:"
 echo "   1. Configure Snowflake Openflow connector for Kinesis"
 echo "   2. Update tenant entry with Kinesis stream details"
 echo "   3. Deploy IoT device certificates from AWS"
@@ -287,11 +337,11 @@ echo "   5. Monitor data flow:"
 echo "      snowsql -a $SNOWFLAKE_ACCOUNT -u $SNOWFLAKE_USER \\"
 echo "        -q \"USE DATABASE smdh_tenant_${TENANT_ID}; CALL analytics.sp_health_check();\""
 echo ""
-log_info "🔍 Validation:"
+log_info "Validation:"
 echo "   Run validation script:"
 echo "   ./scripts/validate_tenant.sh --tenant-id $TENANT_ID"
 echo ""
-log_info "📊 Access tenant data:"
+log_info "Access tenant data:"
 echo "   Database: smdh_tenant_${TENANT_ID}"
 echo "   Dashboard: SELECT * FROM analytics.v_system_summary;"
 echo "   Health Check: CALL analytics.sp_health_check();"

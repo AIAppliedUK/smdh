@@ -23,6 +23,12 @@ variable "devtank_thing_type_name" {
   default     = "DevTankOSM"
 }
 
+variable "network_server_thing_type_name" {
+  description = "Name for LoRaWAN Network Server thing type (ChirpStack or similar)"
+  type        = string
+  default     = "NetworkServer"
+}
+
 variable "air_quality_thing_type_name" {
   description = "Name for Air Quality Sensor thing type"
   type        = string

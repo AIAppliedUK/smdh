@@ -16,6 +16,9 @@
 -- 4. External ID configured for secure cross-account access
 -- ============================================================================
 
+-- Enable SnowSQL variable substitution 
+!set variable_substitution=true
+
 USE ROLE ACCOUNTADMIN;
 
 -- Display banner
@@ -319,11 +322,11 @@ UNION ALL SELECT '║  SMDH Openflow Kinesis Connector Setup Complete           
 UNION ALL SELECT '╚════════════════════════════════════════════════════════════╝'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Created Resources:'
-UNION ALL SELECT '  ✓ Storage Integration: smdh_kinesis_integration'
-UNION ALL SELECT '  ✓ Test Database: smdh_openflow_test (for validation)'
-UNION ALL SELECT '  ✓ Tracking Table: openflow_connectors'
-UNION ALL SELECT '  ✓ Monitoring Views: v_pipe_status, v_kinesis_ingestion_metrics'
-UNION ALL SELECT '  ✓ Management Procedures: sp_pause/resume_tenant_ingestion'
+UNION ALL SELECT '  [OK] Storage Integration: smdh_kinesis_integration'
+UNION ALL SELECT '  [OK] Test Database: smdh_openflow_test (for validation)'
+UNION ALL SELECT '  [OK] Tracking Table: openflow_connectors'
+UNION ALL SELECT '  [OK] Monitoring Views: v_pipe_status, v_kinesis_ingestion_metrics'
+UNION ALL SELECT '  [OK] Management Procedures: sp_pause/resume_tenant_ingestion'
 UNION ALL SELECT ''
 UNION ALL SELECT '⚠ CRITICAL AWS CONFIGURATION REQUIRED:'
 UNION ALL SELECT ''

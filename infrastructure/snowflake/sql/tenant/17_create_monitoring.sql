@@ -14,8 +14,14 @@
 -- - Alerting views
 -- ============================================================================
 
+-- Enable SnowSQL variable substitution 
+!set variable_substitution=true
+
 USE ROLE ACCOUNTADMIN;
 USE WAREHOUSE SMDH_WH;
+
+-- Convert SnowSQL substitution variables to session variables
+SET tenant_id = '&tenant_id';
 
 -- Display banner
 SELECT '╔════════════════════════════════════════════════════════════════╗' AS banner
@@ -52,7 +58,7 @@ WITH hourly_stats AS (
         MAX(DATEDIFF(second, timestamp, ingestion_timestamp)) AS max_ingestion_latency_seconds,
         SUM(CASE WHEN is_valid = TRUE THEN 1 ELSE 0 END) AS valid_readings,
         SUM(CASE WHEN is_duplicate = TRUE THEN 1 ELSE 0 END) AS duplicate_readings
-    FROM smdh_tenant_${tenant_id}.raw.sensor_readings
+    FROM raw.sensor_readings
     WHERE ingestion_timestamp >= DATEADD(day, -7, CURRENT_TIMESTAMP())
     GROUP BY ingestion_hour
 )
@@ -69,7 +75,7 @@ SELECT
     CASE
         WHEN total_readings = 0 THEN 'No Data'
         WHEN avg_ingestion_latency_seconds > 60 THEN 'Degraded'
-        WHEN duplicate_readings::FLOAT / total_readings > 0.1 THEN 'High Duplicates'
+        WHEN duplicate_readings::FLOAT / NULLIF(total_readings, 0) > 0.1 THEN 'High Duplicates'
         ELSE 'Healthy'
     END AS health_status
 FROM hourly_stats
@@ -89,17 +95,16 @@ CREATE OR REPLACE VIEW v_storage_monitoring AS
 SELECT
     table_schema AS schema_name,
     table_name,
-    row_count,
-    bytes AS bytes_stored,
-    ROUND(bytes / (1024*1024*1024), 2) AS gb_stored,
-    ROUND(bytes_retained_for_time_travel / (1024*1024*1024), 2) AS time_travel_gb,
-    ROUND(bytes_retained_for_fail_safe / (1024*1024*1024), 2) AS failsafe_gb,
-    created,
-    last_altered,
-    DATEDIFF(day, last_altered, CURRENT_TIMESTAMP()) AS days_since_modified
-FROM smdh_tenant_${tenant_id}.INFORMATION_SCHEMA.TABLE_STORAGE_METRICS
-WHERE table_catalog = 'smdh_tenant_' || $tenant_id
-ORDER BY bytes DESC;
+    active_bytes AS bytes_stored,
+    ROUND(active_bytes / (1024*1024*1024), 2) AS gb_stored,
+    ROUND(time_travel_bytes / (1024*1024*1024), 2) AS time_travel_gb,
+    ROUND(failsafe_bytes / (1024*1024*1024), 2) AS failsafe_gb,
+    table_created AS created,
+    table_dropped,
+    DATEDIFF(day, table_created, CURRENT_TIMESTAMP()) AS days_since_created
+FROM INFORMATION_SCHEMA.TABLE_STORAGE_METRICS
+WHERE table_catalog = CURRENT_DATABASE()
+ORDER BY active_bytes DESC;
 
 GRANT SELECT ON v_storage_monitoring TO ROLE smdh_monitoring;
 
@@ -148,44 +153,29 @@ SELECT 'Created view: V_QUERY_PERFORMANCE' AS result;
 
 SELECT '5. Creating Pipeline Health Monitoring View...' AS step;
 
+-- Note: INFORMATION_SCHEMA.TASKS doesn't exist at database level
+-- Using a simplified view based on stream status only
 CREATE OR REPLACE VIEW v_pipeline_health AS
 WITH stream_stats AS (
     SELECT 'sensor_readings_stream' AS stream_name,
-           (SELECT COUNT(*) FROM smdh_tenant_${tenant_id}.raw.sensor_readings_stream) AS pending_rows
+           (SELECT COUNT(*) FROM raw.sensor_readings_stream) AS pending_rows
+    UNION ALL
+    SELECT 'device_status_stream',
+           (SELECT COUNT(*) FROM raw.device_status_stream)
     UNION ALL
     SELECT 'sensor_metrics_stream',
-           (SELECT COUNT(*) FROM smdh_tenant_${tenant_id}.normalized.sensor_metrics_stream)
-),
-task_stats AS (
-    SELECT
-        name AS task_name,
-        state AS task_state,
-        (SELECT MAX(scheduled_time)
-         FROM SNOWFLAKE.ACCOUNT_USAGE.TASK_HISTORY
-         WHERE name = t.name AND state = 'SUCCEEDED'
-         AND database_name = 'smdh_tenant_' || $tenant_id) AS last_success_time,
-        (SELECT COUNT(*)
-         FROM SNOWFLAKE.ACCOUNT_USAGE.TASK_HISTORY
-         WHERE name = t.name AND state = 'FAILED'
-         AND database_name = 'smdh_tenant_' || $tenant_id
-         AND scheduled_time >= DATEADD(hour, -24, CURRENT_TIMESTAMP())) AS failures_24h
-    FROM smdh_tenant_${tenant_id}.INFORMATION_SCHEMA.TASKS t
+           (SELECT COUNT(*) FROM normalized.sensor_metrics_stream)
 )
 SELECT
     CURRENT_TIMESTAMP() AS check_time,
     -- Stream health
     (SELECT COUNT(*) FROM stream_stats WHERE pending_rows > 10000) AS streams_with_backlog,
     (SELECT SUM(pending_rows) FROM stream_stats) AS total_pending_stream_rows,
-    -- Task health
-    (SELECT COUNT(*) FROM task_stats WHERE task_state != 'started') AS suspended_tasks,
-    (SELECT SUM(failures_24h) FROM task_stats) AS task_failures_24h,
-    (SELECT MAX(last_success_time) FROM task_stats) AS last_successful_task_run,
-    -- Overall health status
+    -- Overall health status based on stream backlog
     CASE
-        WHEN (SELECT COUNT(*) FROM task_stats WHERE task_state != 'started') > 0 THEN 'Critical - Tasks Suspended'
-        WHEN (SELECT SUM(failures_24h) FROM task_stats) > 5 THEN 'Warning - High Failure Rate'
+        WHEN (SELECT SUM(pending_rows) FROM stream_stats) > 50000 THEN 'Critical - Large Backlog'
         WHEN (SELECT COUNT(*) FROM stream_stats WHERE pending_rows > 10000) > 0 THEN 'Warning - Stream Backlog'
-        WHEN (SELECT MAX(last_success_time) FROM task_stats) < DATEADD(hour, -2, CURRENT_TIMESTAMP()) THEN 'Warning - No Recent Task Execution'
+        WHEN (SELECT SUM(pending_rows) FROM stream_stats) > 5000 THEN 'Warning - Building Backlog'
         ELSE 'Healthy'
     END AS overall_pipeline_status;
 
@@ -209,7 +199,7 @@ WITH quality_by_sensor AS (
         SUM(CASE WHEN quality_flag = 'good' THEN 1 ELSE 0 END) AS good_readings,
         SUM(CASE WHEN quality_flag = 'suspect' THEN 1 ELSE 0 END) AS suspect_readings,
         SUM(CASE WHEN quality_flag = 'bad' THEN 1 ELSE 0 END) AS bad_readings
-    FROM smdh_tenant_${tenant_id}.normalized.sensor_metrics
+    FROM normalized.sensor_metrics
     WHERE timestamp >= DATEADD(day, -7, CURRENT_TIMESTAMP())
     GROUP BY sensor_id, site_id, date
 )
@@ -247,16 +237,10 @@ WITH warehouse_usage AS (
         warehouse_name,
         DATE_TRUNC('day', start_time) AS usage_date,
         SUM(credits_used) AS credits_used,
-        COUNT(*) AS query_count,
-        SUM(bytes_scanned) / (1024*1024*1024*1024) AS tb_scanned
+        SUM(credits_used_compute) AS credits_used_compute,
+        SUM(credits_used_cloud_services) AS credits_used_cloud_services
     FROM SNOWFLAKE.ACCOUNT_USAGE.WAREHOUSE_METERING_HISTORY
-    WHERE warehouse_name IN (
-        'smdh_streaming_wh',
-        'smdh_etl_wh',
-        'smdh_analytics_wh',
-        'smdh_monitoring_wh',
-        'smdh_dev_wh'
-    )
+    WHERE warehouse_name = 'SMDH_WH'  -- Only warehouse currently defined
     AND start_time >= DATEADD(day, -30, CURRENT_TIMESTAMP())
     GROUP BY warehouse_name, usage_date
 ),
@@ -275,12 +259,12 @@ SELECT
     COALESCE(w.usage_date, s.usage_date) AS date,
     w.warehouse_name,
     w.credits_used,
-    w.query_count,
-    ROUND(w.tb_scanned, 3) AS tb_scanned,
+    w.credits_used_compute,
+    w.credits_used_cloud_services,
     ROUND(s.avg_tb_stored, 3) AS tb_stored,
     ROUND(s.avg_tb_failsafe, 3) AS tb_failsafe,
     ROUND(w.credits_used * 3.00, 2) AS estimated_compute_cost_usd,  -- Adjust rate as needed
-    ROUND((s.avg_tb_stored + s.avg_tb_failsafe) * 40.00, 2) AS estimated_storage_cost_usd  -- $40/TB/month
+    ROUND((COALESCE(s.avg_tb_stored, 0) + COALESCE(s.avg_tb_failsafe, 0)) * 40.00, 2) AS estimated_storage_cost_usd  -- $40/TB/month
 FROM warehouse_usage w
 FULL OUTER JOIN storage_usage s ON w.usage_date = s.usage_date
 ORDER BY date DESC, warehouse_name;
@@ -313,20 +297,20 @@ DECLARE
                     ELSE 'FAIL'
                 END AS status,
                 CONCAT('Last ingestion: ', DATEDIFF(minute, MAX(ingestion_timestamp), CURRENT_TIMESTAMP()), ' minutes ago') AS message
-            FROM smdh_tenant_${tenant_id}.raw.sensor_readings
+            FROM raw.sensor_readings
 
             UNION ALL
 
-            -- Check 2: Task execution
+            -- Check 2: Pipeline backlog (replaces task execution check - INFORMATION_SCHEMA.TASKS not available)
             SELECT
                 'Pipeline' AS category,
-                'Task Execution' AS check_name,
+                'Pipeline Backlog' AS check_name,
                 CASE
-                    WHEN COUNT(CASE WHEN state = 'started' THEN 1 END) = COUNT(*) THEN 'PASS'
+                    WHEN (SELECT COUNT(*) FROM raw.device_status_stream) < 500 THEN 'PASS'
+                    WHEN (SELECT COUNT(*) FROM raw.device_status_stream) < 5000 THEN 'WARNING'
                     ELSE 'FAIL'
                 END AS status,
-                CONCAT(COUNT(CASE WHEN state = 'started' THEN 1 END), ' of ', COUNT(*), ' tasks running') AS message
-            FROM smdh_tenant_${tenant_id}.INFORMATION_SCHEMA.TASKS
+                CONCAT((SELECT COUNT(*) FROM raw.device_status_stream), ' rows pending in device_status_stream') AS message
 
             UNION ALL
 
@@ -335,11 +319,11 @@ DECLARE
                 'Pipeline' AS category,
                 'Stream Lag' AS check_name,
                 CASE
-                    WHEN (SELECT COUNT(*) FROM smdh_tenant_${tenant_id}.raw.sensor_readings_stream) < 1000 THEN 'PASS'
-                    WHEN (SELECT COUNT(*) FROM smdh_tenant_${tenant_id}.raw.sensor_readings_stream) < 10000 THEN 'WARNING'
+                    WHEN (SELECT COUNT(*) FROM raw.sensor_readings_stream) < 1000 THEN 'PASS'
+                    WHEN (SELECT COUNT(*) FROM raw.sensor_readings_stream) < 10000 THEN 'WARNING'
                     ELSE 'FAIL'
                 END AS status,
-                CONCAT((SELECT COUNT(*) FROM smdh_tenant_${tenant_id}.raw.sensor_readings_stream), ' rows pending in sensor_readings_stream') AS message
+                CONCAT((SELECT COUNT(*) FROM raw.sensor_readings_stream), ' rows pending in sensor_readings_stream') AS message
 
             UNION ALL
 
@@ -353,7 +337,7 @@ DECLARE
                     ELSE 'FAIL'
                 END AS status,
                 CONCAT('Quality score: ', ROUND(AVG(CASE WHEN quality_flag = 'good' THEN 100.0 ELSE 0.0 END), 2), '%') AS message
-            FROM smdh_tenant_${tenant_id}.normalized.sensor_metrics
+            FROM normalized.sensor_metrics
             WHERE timestamp >= DATEADD(hour, -1, CURRENT_TIMESTAMP())
 
             UNION ALL
@@ -363,12 +347,13 @@ DECLARE
                 'Devices' AS category,
                 'Device Connectivity' AS check_name,
                 CASE
-                    WHEN COUNT(CASE WHEN connectivity_status = 'Online' THEN 1 END)::FLOAT / COUNT(*) >= 0.90 THEN 'PASS'
-                    WHEN COUNT(CASE WHEN connectivity_status = 'Online' THEN 1 END)::FLOAT / COUNT(*) >= 0.70 THEN 'WARNING'
+                    WHEN NULLIF(COUNT(*), 0) IS NULL THEN 'PASS'  -- No devices yet
+                    WHEN COUNT(CASE WHEN connectivity_status = 'Online' THEN 1 END)::FLOAT / NULLIF(COUNT(*), 0) >= 0.90 THEN 'PASS'
+                    WHEN COUNT(CASE WHEN connectivity_status = 'Online' THEN 1 END)::FLOAT / NULLIF(COUNT(*), 0) >= 0.70 THEN 'WARNING'
                     ELSE 'FAIL'
                 END AS status,
                 CONCAT(COUNT(CASE WHEN connectivity_status = 'Online' THEN 1 END), ' of ', COUNT(*), ' devices online') AS message
-            FROM smdh_tenant_${tenant_id}.aggregated.dt_device_health_current
+            FROM aggregated.dt_device_health_current
 
             UNION ALL
 
@@ -377,12 +362,12 @@ DECLARE
                 'Storage' AS category,
                 'Storage Usage' AS check_name,
                 CASE
-                    WHEN SUM(bytes) / (1024*1024*1024*1024) < 0.8 THEN 'PASS'  -- Less than 0.8 TB
-                    WHEN SUM(bytes) / (1024*1024*1024*1024) < 1.5 THEN 'WARNING'  -- Less than 1.5 TB
+                    WHEN SUM(active_bytes) / (1024*1024*1024*1024) < 0.8 THEN 'PASS'  -- Less than 0.8 TB
+                    WHEN SUM(active_bytes) / (1024*1024*1024*1024) < 1.5 THEN 'WARNING'  -- Less than 1.5 TB
                     ELSE 'FAIL'
                 END AS status,
-                CONCAT(ROUND(SUM(bytes) / (1024*1024*1024*1024), 2), ' TB used') AS message
-            FROM smdh_tenant_${tenant_id}.INFORMATION_SCHEMA.TABLE_STORAGE_METRICS
+                CONCAT(ROUND(SUM(active_bytes) / (1024*1024*1024*1024), 2), ' TB used') AS message
+            FROM INFORMATION_SCHEMA.TABLE_STORAGE_METRICS
         )
         SELECT * FROM health_checks
         ORDER BY
@@ -409,29 +394,29 @@ CREATE OR REPLACE VIEW v_system_summary AS
 SELECT
     CURRENT_TIMESTAMP() AS snapshot_time,
     -- Data volume
-    (SELECT COUNT(*) FROM smdh_tenant_${tenant_id}.raw.sensor_readings) AS total_readings,
-    (SELECT COUNT(*) FROM smdh_tenant_${tenant_id}.raw.sensor_readings
+    (SELECT COUNT(*) FROM raw.sensor_readings) AS total_readings,
+    (SELECT COUNT(*) FROM raw.sensor_readings
      WHERE ingestion_timestamp >= DATEADD(day, -1, CURRENT_TIMESTAMP())) AS readings_last_24h,
     -- Devices
     (SELECT COUNT(*) FROM smdh_infrastructure.tenant_configs.devices
      WHERE tenant_id = $tenant_id AND status = 'active') AS total_devices,
-    (SELECT COUNT(*) FROM smdh_tenant_${tenant_id}.aggregated.dt_device_health_current
+    (SELECT COUNT(*) FROM aggregated.dt_device_health_current
      WHERE connectivity_status = 'Online') AS devices_online,
     -- Sites
-    (SELECT COUNT(DISTINCT site_id) FROM smdh_tenant_${tenant_id}.raw.sensor_readings
+    (SELECT COUNT(DISTINCT site_id) FROM raw.sensor_readings
      WHERE ingestion_timestamp >= DATEADD(day, -1, CURRENT_TIMESTAMP())) AS active_sites,
     -- Data quality
     (SELECT ROUND(AVG(CASE WHEN quality_flag = 'good' THEN 100.0 ELSE 0.0 END), 2)
-     FROM smdh_tenant_${tenant_id}.normalized.sensor_metrics
+     FROM normalized.sensor_metrics
      WHERE timestamp >= DATEADD(hour, -24, CURRENT_TIMESTAMP())) AS avg_quality_score_24h,
     -- Alerts
-    (SELECT COUNT(*) FROM smdh_tenant_${tenant_id}.aggregated.dt_alert_conditions
+    (SELECT COUNT(*) FROM aggregated.dt_alert_conditions
      WHERE severity IN ('critical', 'high')) AS active_critical_alerts,
     -- Pipeline health
-    (SELECT overall_pipeline_status FROM smdh_tenant_${tenant_id}.analytics.v_pipeline_health) AS pipeline_status,
+    (SELECT overall_pipeline_status FROM analytics.v_pipeline_health) AS pipeline_status,
     -- Storage
-    (SELECT ROUND(SUM(bytes) / (1024*1024*1024*1024), 3)
-     FROM smdh_tenant_${tenant_id}.INFORMATION_SCHEMA.TABLE_STORAGE_METRICS) AS total_storage_tb;
+    (SELECT ROUND(SUM(active_bytes) / (1024*1024*1024*1024), 3)
+     FROM INFORMATION_SCHEMA.TABLE_STORAGE_METRICS) AS total_storage_tb;
 
 GRANT SELECT ON v_system_summary TO ROLE smdh_monitoring;
 
@@ -443,39 +428,23 @@ SELECT 'Created view: V_SYSTEM_SUMMARY' AS result;
 
 SELECT '10. Creating Monitoring Dashboard Procedure...' AS step;
 
+-- Simplified monitoring dashboard procedure
+-- Note: For detailed dashboard, query v_system_summary and sp_health_check() directly
 CREATE OR REPLACE PROCEDURE sp_monitoring_dashboard()
-RETURNS STRING
+RETURNS TABLE (metric_name VARCHAR, metric_value VARCHAR)
 LANGUAGE SQL
 AS
 $$
+DECLARE
+    result RESULTSET DEFAULT (
+        SELECT 'Database' AS metric_name, CURRENT_DATABASE() AS metric_value
+        UNION ALL
+        SELECT 'Timestamp', TO_VARCHAR(CURRENT_TIMESTAMP())
+        UNION ALL
+        SELECT 'Message', 'Query v_system_summary for full dashboard data'
+    );
 BEGIN
-    -- Display system summary
-    LET result STRING := '========================================\n';
-    result := result || 'SMDH TENANT MONITORING DASHBOARD\n';
-    result := result || 'Tenant: ' || $tenant_id || '\n';
-    result := result || '========================================\n\n';
-
-    -- System summary
-    LET summary RESULTSET := (SELECT * FROM v_system_summary);
-    LET summary_cursor CURSOR FOR summary;
-    OPEN summary_cursor;
-    FETCH summary_cursor INTO ... ;  -- Fetch values
-    result := result || 'System Summary:\n';
-    result := result || '  Total Readings: ' || TO_VARCHAR(total_readings) || '\n';
-    result := result || '  Readings (24h): ' || TO_VARCHAR(readings_last_24h) || '\n';
-    result := result || '  Devices Online: ' || TO_VARCHAR(devices_online) || ' / ' || TO_VARCHAR(total_devices) || '\n';
-    result := result || '  Active Sites: ' || TO_VARCHAR(active_sites) || '\n';
-    result := result || '  Data Quality: ' || TO_VARCHAR(avg_quality_score_24h) || '%\n';
-    result := result || '  Critical Alerts: ' || TO_VARCHAR(active_critical_alerts) || '\n';
-    result := result || '  Pipeline Status: ' || pipeline_status || '\n';
-    result := result || '  Storage Used: ' || TO_VARCHAR(total_storage_tb) || ' TB\n\n';
-
-    -- Health check
-    result := result || 'Health Check Results:\n';
-    LET health RESULTSET := (CALL sp_health_check());
-    -- ... format health check results
-
-    RETURN result;
+    RETURN TABLE(result);
 END;
 $$;
 
@@ -512,7 +481,7 @@ SELECT 'Granted monitoring permissions' AS result;
 SELECT '12. Verifying Monitoring Setup...' AS step;
 
 -- Show all monitoring views
-SHOW VIEWS IN SCHEMA analytics LIKE 'v_%monitoring%';
+SHOW VIEWS LIKE 'V_%' IN SCHEMA analytics;
 
 -- Test health check
 SELECT 'Running health check...' AS test;
@@ -531,17 +500,17 @@ UNION ALL SELECT '║  Tenant Monitoring Setup Complete                         
 UNION ALL SELECT '╚════════════════════════════════════════════════════════════╝'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Created Monitoring Views:'
-UNION ALL SELECT '  ✓ v_ingestion_monitoring (data flow tracking)'
-UNION ALL SELECT '  ✓ v_storage_monitoring (storage usage)'
-UNION ALL SELECT '  ✓ v_query_performance (query analysis)'
-UNION ALL SELECT '  ✓ v_pipeline_health (ETL pipeline status)'
-UNION ALL SELECT '  ✓ v_data_quality_monitoring (quality metrics)'
-UNION ALL SELECT '  ✓ v_cost_monitoring (cost tracking)'
-UNION ALL SELECT '  ✓ v_system_summary (dashboard overview)'
+UNION ALL SELECT '  [OK] v_ingestion_monitoring (data flow tracking)'
+UNION ALL SELECT '  [OK] v_storage_monitoring (storage usage)'
+UNION ALL SELECT '  [OK] v_query_performance (query analysis)'
+UNION ALL SELECT '  [OK] v_pipeline_health (ETL pipeline status)'
+UNION ALL SELECT '  [OK] v_data_quality_monitoring (quality metrics)'
+UNION ALL SELECT '  [OK] v_cost_monitoring (cost tracking)'
+UNION ALL SELECT '  [OK] v_system_summary (dashboard overview)'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Created Procedures:'
-UNION ALL SELECT '  ✓ sp_health_check() (system health validation)'
-UNION ALL SELECT '  ✓ sp_monitoring_dashboard() (dashboard display)'
+UNION ALL SELECT '  [OK] sp_health_check() (system health validation)'
+UNION ALL SELECT '  [OK] sp_monitoring_dashboard() (dashboard display)'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Key Monitoring Queries:'
 UNION ALL SELECT ''

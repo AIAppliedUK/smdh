@@ -223,7 +223,7 @@ else
             if [[ "$CONNECTED_STATUS" == "true" ]]; then
                 ((CONNECTED++))
                 if [[ "$VERBOSE" == true ]]; then
-                    echo -e "    ${GREEN}✓${NC} $DEVICE (connected)"
+                    echo -e "    ${GREEN}[OK]${NC} $DEVICE (connected)"
                 fi
             else
                 ((DISCONNECTED++))
@@ -494,7 +494,7 @@ HEALTH_SCORE=$((CHECKS_PASSED * 100 / CHECKS_TOTAL))
 echo "Overall Health Score: $HEALTH_SCORE% ($CHECKS_PASSED/$CHECKS_TOTAL checks passed)"
 
 if [[ $HEALTH_SCORE -ge 85 ]]; then
-    echo -e "System Status: ${GREEN}HEALTHY${NC} ✓"
+    echo -e "System Status: ${GREEN}HEALTHY${NC} [OK]"
     EXIT_CODE=0
 elif [[ $HEALTH_SCORE -ge 60 ]]; then
     echo -e "System Status: ${YELLOW}DEGRADED${NC} ⚠"

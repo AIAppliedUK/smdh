@@ -152,9 +152,7 @@ SELECT
     warehouse_name,
     DATE_TRUNC('hour', start_time) AS hour,
     SUM(credits_used) AS credits_used,
-    COUNT(*) AS query_count,
-    AVG(execution_time) / 1000 AS avg_execution_seconds,
-    SUM(bytes_scanned) / (1024*1024*1024) AS gb_scanned
+    COUNT(*) AS metering_records
 FROM SNOWFLAKE.ACCOUNT_USAGE.WAREHOUSE_METERING_HISTORY
 WHERE warehouse_name LIKE 'smdh_%'
     AND start_time >= DATEADD(day, -7, CURRENT_TIMESTAMP())
@@ -219,11 +217,9 @@ SELECT
     credit_quota,
     used_credits,
     remaining_credits,
-    level,
-    comment
+    ROUND((used_credits / NULLIF(credit_quota, 0)) * 100, 2) AS usage_pct
 FROM SNOWFLAKE.ACCOUNT_USAGE.RESOURCE_MONITORS
-WHERE name = 'smdh_platform_monitor'
-    AND (end_time IS NULL OR end_time > CURRENT_TIMESTAMP());
+WHERE name = 'smdh_platform_monitor';
 
 GRANT SELECT ON v_resource_monitor_status TO ROLE smdh_monitoring;
 GRANT SELECT ON v_resource_monitor_status TO ROLE smdh_infrastructure_admin;
@@ -264,14 +260,14 @@ UNION ALL SELECT '║  SMDH Shared Resources Setup Complete                     
 UNION ALL SELECT '╚════════════════════════════════════════════════════════════╝'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Created Resources:'
-UNION ALL SELECT '  ✓ Resource Monitor: smdh_platform_monitor (1000 credits/month)'
-UNION ALL SELECT '  ✓ Warehouse: SMDH_WH (SMALL, auto-scale 1-3)'
-UNION ALL SELECT '  ✓ Roles:'
+UNION ALL SELECT '  [OK] Resource Monitor: smdh_platform_monitor (1000 credits/month)'
+UNION ALL SELECT '  [OK] Warehouse: SMDH_WH (SMALL, auto-scale 1-3)'
+UNION ALL SELECT '  [OK] Roles:'
 UNION ALL SELECT '      - smdh_tenant_operator'
 UNION ALL SELECT '      - smdh_data_engineer'
 UNION ALL SELECT '      - smdh_analytics_user (template)'
-UNION ALL SELECT '  ✓ Service Account: smdh_automation_svc'
-UNION ALL SELECT '  ✓ Monitoring Views: v_warehouse_utilization, v_warehouse_state, v_daily_costs'
+UNION ALL SELECT '  [OK] Service Account: smdh_automation_svc'
+UNION ALL SELECT '  [OK] Monitoring Views: v_warehouse_utilization, v_warehouse_state, v_daily_costs'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Configuration Notes:'
 UNION ALL SELECT '  • Single SMDH_WH warehouse serves all operations (streaming, ETL, analytics, dev, monitoring)'

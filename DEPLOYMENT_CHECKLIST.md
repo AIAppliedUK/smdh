@@ -2,7 +2,7 @@
 
 Complete step-by-step guide to deploy SMDH from scratch.
 
-**Last Updated:** November 22, 2025
+**Last Updated:** December 1, 2025
 **Estimated Deployment Time:** 1-2 hours (first time), 30 minutes (subsequent deployments)
 
 ---
@@ -175,11 +175,11 @@ tenants = {
 terraform plan -var-file=environments/dev/terraform.tfvars -out=tfplan
 
 # Review the plan output carefully
-# Should show: 48+ resources to be created
+# Should show: 63+ resources to be created
 ```
 
 - [ ] Plan generated successfully
-- [ ] Review shows expected resources (48+)
+- [ ] Review shows expected resources (63+)
 - [ ] No unexpected deletions
 - [ ] No errors in plan
 
@@ -195,7 +195,7 @@ terraform apply tfplan
 
 - [ ] Terraform apply completed successfully
 - [ ] No errors reported
-- [ ] All 48+ resources created
+- [ ] All 63+ resources created
 
 ### Step 1.6: Capture Terraform Outputs
 
@@ -504,11 +504,12 @@ terraform output cloudwatch_dashboard_url
 Visit AWS Console and verify:
 
 - [ ] IoT Core
-  - [ ] 2 Thing Types exist (LoRaWANGateway, DevTankOSM)
+  - [ ] 10 Thing Types exist (LoRaWANGateway, NetworkServer, DevTankOSM, sensors)
   - [ ] 2 Things exist (gateways for 2 sites)
   - [ ] 2 Certificates attached to Things
   - [ ] 1 Policy created (smdh-policy-test_tenant)
   - [ ] 1 Rule created (routing to Kinesis)
+  - [ ] Thing Groups hierarchy (tenant, site, dynamic groups)
 
 - [ ] Kinesis
   - [ ] Stream exists: smdh-sensor-data-stream
@@ -652,7 +653,7 @@ snowsql -a $SNOWFLAKE_ACCOUNT -u $SNOWFLAKE_USER \
 
 ✅ Deployment successful if all these are true:
 
-1. ✅ All 48+ AWS resources created
+1. ✅ All 63 AWS resources created
 2. ✅ Snowflake smdh_infrastructure database exists
 3. ✅ Test tenant database created (smdh_tenant_test_tenant)
 4. ✅ MQTT connection test passes
@@ -664,6 +665,6 @@ snowsql -a $SNOWFLAKE_ACCOUNT -u $SNOWFLAKE_USER \
 
 ---
 
-**Deployment Checklist Version:** 1.0
-**Last Updated:** November 22, 2025
+**Deployment Checklist Version:** 1.1
+**Last Updated:** December 1, 2025
 **Maintainer:** Platform Team

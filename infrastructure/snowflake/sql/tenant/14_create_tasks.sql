@@ -14,8 +14,14 @@
 -- - Task graph with dependencies
 -- ============================================================================
 
+-- Enable SnowSQL variable substitution 
+!set variable_substitution=true
+
 USE ROLE ACCOUNTADMIN;
 USE WAREHOUSE SMDH_WH;
+
+-- Convert SnowSQL substitution variables to session variables
+SET tenant_id = '&tenant_id';
 
 -- Display banner
 SELECT '╔════════════════════════════════════════════════════════════════╗' AS banner
@@ -54,12 +60,12 @@ SELECT '3. Creating Task: Normalize Sensor Readings...' AS step;
 USE SCHEMA raw;
 
 CREATE OR REPLACE TASK task_normalize_sensor_readings
-    WAREHOUSE = smdh_etl_wh
-    SCHEDULE = '1 MINUTE'                             -- Run every minute
-    WHEN SYSTEM$STREAM_HAS_DATA('sensor_readings_stream')
+    WAREHOUSE = SMDH_WH
+    SCHEDULE = '1 MINUTE'
     COMMENT = 'Normalizes raw sensor readings into flattened metrics table. Runs every minute when new data arrives.'
+    WHEN SYSTEM$STREAM_HAS_DATA('sensor_readings_stream')
 AS
-INSERT INTO smdh_tenant_${tenant_id}.normalized.sensor_metrics (
+INSERT INTO normalized.sensor_metrics (
     tenant_id,
     sensor_id,
     site_id,
@@ -130,12 +136,12 @@ SELECT 'Created task: TASK_NORMALIZE_SENSOR_READINGS' AS result;
 SELECT '4. Creating Task: Process Device Events...' AS step;
 
 CREATE OR REPLACE TASK task_process_device_status
-    WAREHOUSE = smdh_etl_wh
-    SCHEDULE = '2 MINUTE'                             -- Run every 2 minutes
-    WHEN SYSTEM$STREAM_HAS_DATA('device_status_stream')
+    WAREHOUSE = SMDH_WH
+    SCHEDULE = '2 MINUTE'
     COMMENT = 'Processes device status changes into normalized events for alerting.'
+    WHEN SYSTEM$STREAM_HAS_DATA('device_status_stream')
 AS
-INSERT INTO smdh_tenant_${tenant_id}.normalized.device_events (
+INSERT INTO normalized.device_events (
     tenant_id,
     device_id,
     site_id,
@@ -209,13 +215,12 @@ SELECT '5. Creating Task: Hourly Aggregations...' AS step;
 USE SCHEMA normalized;
 
 CREATE OR REPLACE TASK task_aggregate_hourly
-    WAREHOUSE = smdh_etl_wh
-    SCHEDULE = '5 MINUTE'                             -- Run every 5 minutes
-    AFTER task_normalize_sensor_readings              -- Depends on normalization
+    WAREHOUSE = SMDH_WH
+    SCHEDULE = '5 MINUTE'
+    COMMENT = 'Aggregates sensor metrics into hourly rollups. Triggered by stream data.'
     WHEN SYSTEM$STREAM_HAS_DATA('sensor_metrics_stream')
-    COMMENT = 'Aggregates sensor metrics into hourly rollups. Runs after normalization completes.'
 AS
-MERGE INTO smdh_tenant_${tenant_id}.aggregated.sensor_metrics_hourly AS target
+MERGE INTO aggregated.sensor_metrics_hourly AS target
 USING (
     SELECT
         tenant_id,
@@ -276,11 +281,11 @@ SELECT 'Created task: TASK_AGGREGATE_HOURLY' AS result;
 SELECT '6. Creating Task: Daily Aggregations...' AS step;
 
 CREATE OR REPLACE TASK task_aggregate_daily
-    WAREHOUSE = smdh_etl_wh
-    SCHEDULE = 'USING CRON 0 1 * * * UTC'            -- Run at 01:00 UTC daily
+    WAREHOUSE = SMDH_WH
+    SCHEDULE = 'USING CRON 0 1 * * * UTC'
     COMMENT = 'Aggregates sensor metrics into daily rollups. Runs once per day after midnight.'
 AS
-MERGE INTO smdh_tenant_${tenant_id}.aggregated.sensor_metrics_daily AS target
+MERGE INTO aggregated.sensor_metrics_daily AS target
 USING (
     SELECT
         tenant_id,
@@ -301,7 +306,7 @@ USING (
         SUM(CASE WHEN quality_flag = 'bad' THEN 1 ELSE 0 END) AS bad_readings,
         (24 - COUNT(DISTINCT DATE_TRUNC('hour', timestamp))) AS missing_hours,
         (COUNT(DISTINCT DATE_TRUNC('hour', timestamp))::FLOAT / 24) * 100 AS data_completeness_score
-    FROM smdh_tenant_${tenant_id}.normalized.sensor_metrics
+    FROM normalized.sensor_metrics
     WHERE DATE_TRUNC('day', timestamp)::DATE = DATEADD(day, -1, CURRENT_DATE())  -- Previous day
     GROUP BY tenant_id, sensor_id, site_id, metric_name, day_date
 ) AS source
@@ -351,8 +356,8 @@ SELECT '7. Creating Task: Update Device Registry...' AS step;
 USE SCHEMA raw;
 
 CREATE OR REPLACE TASK task_update_device_registry
-    WAREHOUSE = smdh_monitoring_wh                    -- Use small monitoring warehouse
-    SCHEDULE = '10 MINUTE'                            -- Run every 10 minutes
+    WAREHOUSE = SMDH_WH
+    SCHEDULE = '10 MINUTE'
     COMMENT = 'Updates device connection timestamps and message counts in infrastructure registry.'
 AS
 MERGE INTO smdh_infrastructure.tenant_configs.devices AS target
@@ -362,7 +367,7 @@ USING (
         sensor_id AS device_id,
         MAX(timestamp) AS last_message_timestamp,
         COUNT(*) AS message_count
-    FROM smdh_tenant_${tenant_id}.raw.sensor_readings
+    FROM raw.sensor_readings
     WHERE ingestion_timestamp >= DATEADD(minute, -15, CURRENT_TIMESTAMP())
     GROUP BY sensor_id
 ) AS source
@@ -383,6 +388,8 @@ SELECT '8. Creating Task Monitoring Views...' AS step;
 
 USE SCHEMA analytics;
 
+-- Note: INFORMATION_SCHEMA.TASKS doesn't exist at database level
+-- Using SNOWFLAKE.ACCOUNT_USAGE.TASKS (has ~2hr latency for new tasks)
 CREATE OR REPLACE VIEW v_task_status AS
 SELECT
     name AS task_name,
@@ -392,10 +399,12 @@ SELECT
     schedule AS task_schedule,
     state AS task_state,
     condition AS task_condition,
-    created_on,
+    created AS created_on,
     comment AS description
-FROM smdh_tenant_${tenant_id}.INFORMATION_SCHEMA.TASKS
-ORDER BY created_on DESC;
+FROM SNOWFLAKE.ACCOUNT_USAGE.TASKS
+WHERE database_name = CURRENT_DATABASE()
+  AND deleted IS NULL
+ORDER BY created DESC;
 
 -- Create view for task execution history
 CREATE OR REPLACE VIEW v_task_history AS
@@ -422,7 +431,7 @@ SELECT 'Created task monitoring views' AS result;
 
 SELECT '9. Creating Task Management Procedures...' AS step;
 
--- Procedure to resume all tasks
+-- Procedure to resume all tasks (uses current database context)
 CREATE OR REPLACE PROCEDURE sp_resume_all_tasks()
 RETURNS STRING
 LANGUAGE SQL
@@ -430,11 +439,11 @@ EXECUTE AS CALLER
 AS
 $$
 BEGIN
-    ALTER TASK smdh_tenant_${tenant_id}.raw.task_normalize_sensor_readings RESUME;
-    ALTER TASK smdh_tenant_${tenant_id}.raw.task_process_device_status RESUME;
-    ALTER TASK smdh_tenant_${tenant_id}.normalized.task_aggregate_hourly RESUME;
-    ALTER TASK smdh_tenant_${tenant_id}.normalized.task_aggregate_daily RESUME;
-    ALTER TASK smdh_tenant_${tenant_id}.raw.task_update_device_registry RESUME;
+    ALTER TASK raw.task_normalize_sensor_readings RESUME;
+    ALTER TASK raw.task_process_device_status RESUME;
+    ALTER TASK normalized.task_aggregate_hourly RESUME;
+    ALTER TASK normalized.task_aggregate_daily RESUME;
+    ALTER TASK raw.task_update_device_registry RESUME;
 
     RETURN 'All tasks resumed successfully';
 EXCEPTION
@@ -443,7 +452,7 @@ EXCEPTION
 END;
 $$;
 
--- Procedure to suspend all tasks
+-- Procedure to suspend all tasks (uses current database context)
 CREATE OR REPLACE PROCEDURE sp_suspend_all_tasks()
 RETURNS STRING
 LANGUAGE SQL
@@ -452,11 +461,11 @@ AS
 $$
 BEGIN
     -- Suspend in reverse dependency order
-    ALTER TASK smdh_tenant_${tenant_id}.normalized.task_aggregate_hourly SUSPEND;
-    ALTER TASK smdh_tenant_${tenant_id}.normalized.task_aggregate_daily SUSPEND;
-    ALTER TASK smdh_tenant_${tenant_id}.raw.task_normalize_sensor_readings SUSPEND;
-    ALTER TASK smdh_tenant_${tenant_id}.raw.task_process_device_status SUSPEND;
-    ALTER TASK smdh_tenant_${tenant_id}.raw.task_update_device_registry SUSPEND;
+    ALTER TASK normalized.task_aggregate_hourly SUSPEND;
+    ALTER TASK normalized.task_aggregate_daily SUSPEND;
+    ALTER TASK raw.task_normalize_sensor_readings SUSPEND;
+    ALTER TASK raw.task_process_device_status SUSPEND;
+    ALTER TASK raw.task_update_device_registry SUSPEND;
 
     RETURN 'All tasks suspended successfully';
 EXCEPTION
@@ -473,12 +482,12 @@ SELECT 'Created task management procedures' AS result;
 
 SELECT '10. Starting Task Pipeline...' AS step;
 
--- Resume tasks in dependency order (root tasks first)
-ALTER TASK task_normalize_sensor_readings RESUME;
-ALTER TASK task_process_device_status RESUME;
-ALTER TASK task_update_device_registry RESUME;
-ALTER TASK task_aggregate_hourly RESUME;
-ALTER TASK task_aggregate_daily RESUME;
+-- Resume tasks with fully qualified schema names
+ALTER TASK raw.task_normalize_sensor_readings RESUME;
+ALTER TASK raw.task_process_device_status RESUME;
+ALTER TASK raw.task_update_device_registry RESUME;
+ALTER TASK normalized.task_aggregate_hourly RESUME;
+ALTER TASK normalized.task_aggregate_daily RESUME;
 
 SELECT 'All tasks started successfully' AS result;
 
@@ -498,8 +507,8 @@ GRANT MONITOR ON ALL TASKS IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTI
 GRANT OPERATE ON ALL TASKS IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($admin_role_name);
 
 -- Grant procedure execution
-GRANT USAGE ON PROCEDURE smdh_tenant_${tenant_id}.analytics.sp_resume_all_tasks() TO ROLE IDENTIFIER($admin_role_name);
-GRANT USAGE ON PROCEDURE smdh_tenant_${tenant_id}.analytics.sp_suspend_all_tasks() TO ROLE IDENTIFIER($admin_role_name);
+GRANT USAGE ON PROCEDURE analytics.sp_resume_all_tasks() TO ROLE IDENTIFIER($admin_role_name);
+GRANT USAGE ON PROCEDURE analytics.sp_suspend_all_tasks() TO ROLE IDENTIFIER($admin_role_name);
 
 SELECT 'Granted task permissions' AS result;
 
@@ -530,11 +539,11 @@ UNION ALL SELECT ''
 UNION ALL SELECT 'Created Tasks:'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Data Processing Pipeline:'
-UNION ALL SELECT '  ✓ task_normalize_sensor_readings (1 min, stream-triggered)'
-UNION ALL SELECT '  ✓ task_process_device_status (2 min, stream-triggered)'
-UNION ALL SELECT '  ✓ task_aggregate_hourly (5 min, after normalization)'
-UNION ALL SELECT '  ✓ task_aggregate_daily (daily at 01:00 UTC)'
-UNION ALL SELECT '  ✓ task_update_device_registry (10 min)'
+UNION ALL SELECT '  [OK] task_normalize_sensor_readings (1 min, stream-triggered)'
+UNION ALL SELECT '  [OK] task_process_device_status (2 min, stream-triggered)'
+UNION ALL SELECT '  [OK] task_aggregate_hourly (5 min, after normalization)'
+UNION ALL SELECT '  [OK] task_aggregate_daily (daily at 01:00 UTC)'
+UNION ALL SELECT '  [OK] task_update_device_registry (10 min)'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Task Features:'
 UNION ALL SELECT '  • Stream-driven execution (only runs when data available)'
@@ -544,10 +553,10 @@ UNION ALL SELECT '  • Error handling and logging'
 UNION ALL SELECT '  • Incremental processing via streams'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Management Objects:'
-UNION ALL SELECT '  ✓ v_task_status (view)'
-UNION ALL SELECT '  ✓ v_task_history (view)'
-UNION ALL SELECT '  ✓ sp_resume_all_tasks (procedure)'
-UNION ALL SELECT '  ✓ sp_suspend_all_tasks (procedure)'
+UNION ALL SELECT '  [OK] v_task_status (view)'
+UNION ALL SELECT '  [OK] v_task_history (view)'
+UNION ALL SELECT '  [OK] sp_resume_all_tasks (procedure)'
+UNION ALL SELECT '  [OK] sp_suspend_all_tasks (procedure)'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Task Status: All tasks RESUMED and running'
 UNION ALL SELECT ''

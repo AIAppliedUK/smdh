@@ -1,17 +1,17 @@
-# SMDH Tagging Strategy
+ SMDH Tagging Strategy
 
-## Overview
+ Overview
 
 This document defines the comprehensive tagging strategy for the SMDH platform to enable:
-- **Cost Allocation**: Track costs per tenant, environment, and component
-- **Operational Monitoring**: Identify resources for troubleshooting
-- **Compliance**: Meet regulatory tagging requirements
-- **Automation**: Enable automated resource management
-- **Security**: Classify data and enforce policies
+- Cost Allocation: Track costs per tenant, environment, and component
+- Operational Monitoring: Identify resources for troubleshooting
+- Compliance: Meet regulatory tagging requirements
+- Automation: Enable automated resource management
+- Security: Classify data and enforce policies
 
-## Tag Categories
+ Tag Categories
 
-### 1. Mandatory Tags (Applied to ALL Resources)
+ . Mandatory Tags (Applied to ALL Resources)
 
 These tags are REQUIRED and enforced via Terraform validation:
 
@@ -21,18 +21,18 @@ These tags are REQUIRED and enforced via Terraform validation:
 | `Environment` | Environment name | `prod`, `dev`, `staging` | Separate environments |
 | `ManagedBy` | Management tool | `Terraform` | Identify IaC-managed resources |
 | `Owner` | Team/person responsible | `Platform-Team` | Contact for issues |
-| `CostCenter` | Billing allocation code | `ENG-001` | **Cost allocation** |
+| `CostCenter` | Billing allocation code | `ENG-` | Cost allocation |
 | `Repository` | Source code location | `smdh` | Link to code |
 
-**Terraform Configuration:**
+Terraform Configuration:
 ```hcl
-# Set in terraform.tfvars
+ Set in terraform.tfvars
 owner       = "Platform-Team"
-cost_center = "ENG-001"
+cost_center = "ENG-"
 environment = "prod"
 ```
 
-### 2. Component Tags (Applied by Module)
+ . Component Tags (Applied by Module)
 
 These tags identify the technical component:
 
@@ -42,58 +42,58 @@ These tags identify the technical component:
 | `Service` | AWS service name | `AWS-IoT`, `Kinesis-Stream` | Module |
 | `Description` | Human-readable description | `MQTT broker and device registry` | Module |
 
-**Automatically Applied:**
+Automatically Applied:
 - IoT Core module: `Component: IoT-Core`, `Service: AWS-IoT`
 - Kinesis module: `Component: Data-Ingestion`, `Service: Kinesis-Stream`
 - CloudWatch module: `Component: Monitoring`, `Service: CloudWatch`
 
-### 3. Tenant-Specific Tags (Per-Tenant Resources)
+ . Tenant-Specific Tags (Per-Tenant Resources)
 
 These enable per-tenant cost tracking:
 
 | Tag Name | Description | Example | Purpose |
 |----------|-------------|---------|---------|
-| `TenantId` | Unique tenant identifier | `company_a` | **Tenant cost allocation** |
+| `TenantId` | Unique tenant identifier | `company_a` | Tenant cost allocation |
 | `TenantName` | Human-readable name | `Company A Manufacturing Ltd` | Identification |
-| `BillingTenant` | Billing identifier | `company_a` | **Cost reports** |
-| `NumSites` | Number of sites | `5` | Capacity planning |
+| `BillingTenant` | Billing identifier | `company_a` | Cost reports |
+| `NumSites` | Number of sites | `` | Capacity planning |
 | `ContactEmail` | Tenant contact | `ops@companya.com` | Alerting |
 
-**Cost Allocation Query:**
+Cost Allocation Query:
 ```sql
 -- AWS Cost Explorer filter
 Tag: TenantId = company_a
 ```
 
-### 4. Compliance Tags
+ . Compliance Tags
 
 Required for data governance and security:
 
 | Tag Name | Description | Values | Purpose |
 |----------|-------------|--------|---------|
 | `DataClassification` | Data sensitivity level | `Public`, `Internal`, `Confidential`, `Restricted` | Security policies |
-| `Compliance` | Regulatory requirements | `GDPR`, `ISO27001`, `None` | Audit compliance |
+| `Compliance` | Regulatory requirements | `GDPR`, `ISO`, `None` | Audit compliance |
 | `BackupPolicy` | Backup retention | `Daily`, `Weekly`, `Monthly`, `None` | Data protection |
 | `EncryptionRequired` | Must encrypt at rest | `true`, `false` | Security enforcement |
 
-**Default Values:**
+Default Values:
 - DataClassification: `Internal`
 - Compliance: `None`
 - BackupPolicy: `Daily`
 
-### 5. Operational Tags
+ . Operational Tags
 
 Support operations and troubleshooting:
 
 | Tag Name | Description | Example | Purpose |
 |----------|-------------|---------|---------|
 | `DeployedBy` | Who deployed | `john.smith@company.com` | Audit trail |
-| `DeployedAt` | When deployed | `2024-11-21T10:00:00Z` | Change tracking |
+| `DeployedAt` | When deployed | `--T::Z` | Change tracking |
 | `TerraformWorkspace` | TF workspace | `prod` | State management |
 | `ServiceTier` | Criticality | `Critical`, `High`, `Medium`, `Low` | SLA enforcement |
 | `Critical` | Business critical | `true`, `false` | Priority alerting |
 
-### 6. Integration Tags
+ . Integration Tags
 
 Identify cross-service integrations:
 
@@ -102,106 +102,106 @@ Identify cross-service integrations:
 | `Integration` | External system | `Snowflake` | IAM roles |
 | `DataFlow` | Data pipeline | `IoT-to-Snowflake` | Kinesis |
 
-## Tag Hierarchy
+ Tag Hierarchy
 
 ```
 Common Tags (ALL resources)
-├── Project: smdh
-├── Environment: prod
-├── ManagedBy: Terraform
-├── Owner: Platform-Team
-├── CostCenter: ENG-001
-├── Repository: smdh
-├── DataClassification: Internal
-├── Compliance: GDPR
-└── BackupPolicy: Daily
+ Project: smdh
+ Environment: prod
+ ManagedBy: Terraform
+ Owner: Platform-Team
+ CostCenter: ENG-
+ Repository: smdh
+ DataClassification: Internal
+ Compliance: GDPR
+ BackupPolicy: Daily
 
 Module-Specific Tags
-├── Component: [varies by module]
-├── Service: [AWS service]
-└── Description: [module purpose]
+ Component: [varies by module]
+ Service: [AWS service]
+ Description: [module purpose]
 
 Resource-Specific Tags
-├── TenantId: [per tenant]
-├── TenantName: [per tenant]
-└── BillingTenant: [per tenant]
+ TenantId: [per tenant]
+ TenantName: [per tenant]
+ BillingTenant: [per tenant]
 ```
 
-## Cost Allocation Strategy
+ Cost Allocation Strategy
 
-### AWS Cost Explorer Filters
+ AWS Cost Explorer Filters
 
-1. **By Environment**
+. By Environment
    ```
    Tag: Environment = prod
    ```
 
-2. **By Tenant**
+. By Tenant
    ```
    Tag: TenantId = company_a
    ```
 
-3. **By Component**
+. By Component
    ```
    Tag: Component = IoT-Core
    ```
 
-4. **By Cost Center**
+. By Cost Center
    ```
-   Tag: CostCenter = ENG-001
+   Tag: CostCenter = ENG-
    ```
 
-### Cost Allocation Report Example
+ Cost Allocation Report Example
 
 ```
-Month: November 2024
+Month: November 
 Environment: prod
-Cost Center: ENG-001
+Cost Center: ENG-
 
-Total: $250.00
+Total: $.
 
 By Component:
-- IoT-Core:        $130.00 (52%)
-- Data-Ingestion:  $ 18.00 (7%)
-- Monitoring:      $100.00 (40%)
-- Security:        $  2.00 (1%)
+- IoT-Core:        $. (%)
+- Data-Ingestion:  $ . (%)
+- Monitoring:      $. (%)
+- Security:        $  . (%)
 
 By Tenant:
-- company_a:       $ 83.33 (33%)
-- company_b:       $ 83.33 (33%)
-- company_c:       $ 83.34 (34%)
+- company_a:       $ . (%)
+- company_b:       $ . (%)
+- company_c:       $ . (%)
 ```
 
-### Per-Tenant Cost Calculation
+ Per-Tenant Cost Calculation
 
 ```
 Shared Costs (Platform):
-- IoT Core base:   $50/month (split evenly)
-- Kinesis:         $18/month (split evenly)
-- Monitoring:      $100/month (split evenly)
-Shared Total:      $168/month
+- IoT Core base:   $/month (split evenly)
+- Kinesis:         $/month (split evenly)
+- Monitoring:      $/month (split evenly)
+Shared Total:      $/month
 
 Per-Tenant Costs:
-- IoT messages:    ($0.12/million) × messages
-- IoT certificates: $0/month (free)
-- SNS topic:       $0.50/month
-- Alarms:          $0.20/month × alarms
+- IoT messages:    ($./million) × messages
+- IoT certificates: $/month (free)
+- SNS topic:       $./month
+- Alarms:          $./month × alarms
 
 Total per Tenant = (Shared / num_tenants) + Per-Tenant
 ```
 
-## AWS Cost and Usage Reports (CUR)
+ AWS Cost and Usage Reports (CUR)
 
-### Enable CUR with Tags
+ Enable CUR with Tags
 
-1. **AWS Console** → Billing → Cost and Usage Reports
-2. **Create Report**:
+. AWS Console → Billing → Cost and Usage Reports
+. Create Report:
    - Report name: `smdh-cur-report`
    - Time granularity: `Daily`
    - Include resource IDs: `Yes`
    - Enable tag export: `Yes`
 
-3. **Select Tags to Export**:
+. Select Tags to Export:
    - `Project`
    - `Environment`
    - `TenantId`
@@ -209,7 +209,7 @@ Total per Tenant = (Shared / num_tenants) + Per-Tenant
    - `CostCenter`
    - `Owner`
 
-### Query CUR in Athena
+ Query CUR in Athena
 
 ```sql
 -- Cost by tenant
@@ -223,59 +223,59 @@ GROUP BY tenant_id, line_item_resource_id
 ORDER BY cost DESC;
 ```
 
-## Tagging Best Practices
+ Tagging Best Practices
 
-### DO ✅
+ DO 
 
-1. **Use consistent naming**
+. Use consistent naming
    - Use PascalCase for tag keys: `CostCenter`, `TenantId`
    - Use lowercase with hyphens for values: `company-a`, `iot-core`
 
-2. **Keep values machine-readable**
-   - Good: `company_a`, `eng-001`
-   - Bad: `Company A Manufacturing Ltd.`, `Engineering Dept. 001`
+. Keep values machine-readable
+   - Good: `company_a`, `eng-`
+   - Bad: `Company A Manufacturing Ltd.`, `Engineering Dept. `
 
-3. **Document tag meanings**
+. Document tag meanings
    - Maintain this TAGGING_STRATEGY.md
    - Update when adding new tags
 
-4. **Validate tags in Terraform**
+. Validate tags in Terraform
    - Use validation blocks
    - Enforce mandatory tags
 
-5. **Review tags monthly**
+. Review tags monthly
    - Audit Cost Explorer
    - Identify untagged resources
    - Update tagging policy
 
-### DON'T ❌
+ DON'T 
 
-1. **Don't use PII in tags**
+. Don't use PII in tags
    - Bad: `email=john.smith@company.com`
    - Good: `Owner=Platform-Team`
 
-2. **Don't create too many tags**
-   - AWS limit: 50 tags per resource
+. Don't create too many tags
+   - AWS limit:  tags per resource
    - Keep to essential tags only
 
-3. **Don't use special characters**
-   - Avoid: `!`, `@`, `#`, `$`, `%`
+. Don't use special characters
+   - Avoid: `!`, `@`, ``, `$`, `%`
    - Use: Letters, numbers, `-`, `_`, `.`
 
-4. **Don't hardcode values**
+. Don't hardcode values
    - Use Terraform variables
    - Use locals for computed tags
 
-5. **Don't forget tenant isolation**
+. Don't forget tenant isolation
    - Always tag with `TenantId`
    - Always tag with `BillingTenant`
 
-## Enforcement
+ Enforcement
 
-### Terraform Validation
+ Terraform Validation
 
 ```hcl
-# In tags.tf
+ In tags.tf
 resource "null_resource" "validate_tags" {
   lifecycle {
     precondition {
@@ -291,7 +291,7 @@ resource "null_resource" "validate_tags" {
 }
 ```
 
-### AWS Config Rules (Optional)
+ AWS Config Rules (Optional)
 
 ```json
 {
@@ -302,17 +302,17 @@ resource "null_resource" "validate_tags" {
     "SourceIdentifier": "REQUIRED_TAGS"
   },
   "InputParameters": {
-    "tag1Key": "Project",
-    "tag2Key": "Environment",
-    "tag3Key": "Owner",
-    "tag4Key": "CostCenter"
+    "tagKey": "Project",
+    "tagKey": "Environment",
+    "tagKey": "Owner",
+    "tagKey": "CostCenter"
   }
 }
 ```
 
-## Tag Usage Examples
+ Tag Usage Examples
 
-### Example 1: Production IoT Thing
+ Example : Production IoT Thing
 
 ```json
 {
@@ -320,7 +320,7 @@ resource "null_resource" "validate_tags" {
   "Environment": "prod",
   "ManagedBy": "Terraform",
   "Owner": "Platform-Team",
-  "CostCenter": "ENG-001",
+  "CostCenter": "ENG-",
   "Repository": "smdh",
   "Component": "Tenant-Resources",
   "Service": "Multi-Tenant-IoT",
@@ -329,11 +329,11 @@ resource "null_resource" "validate_tags" {
   "BillingTenant": "company_a",
   "DataClassification": "Internal",
   "Compliance": "GDPR",
-  "DeployedAt": "2024-11-21T10:00:00Z"
+  "DeployedAt": "--T::Z"
 }
 ```
 
-### Example 2: Kinesis Stream
+ Example : Kinesis Stream
 
 ```json
 {
@@ -341,7 +341,7 @@ resource "null_resource" "validate_tags" {
   "Environment": "prod",
   "ManagedBy": "Terraform",
   "Owner": "Platform-Team",
-  "CostCenter": "ENG-001",
+  "CostCenter": "ENG-",
   "Component": "Data-Ingestion",
   "Service": "Kinesis-Stream",
   "Description": "Sensor data buffer and ordering",
@@ -352,7 +352,7 @@ resource "null_resource" "validate_tags" {
 }
 ```
 
-### Example 3: Secrets Manager Secret
+ Example : Secrets Manager Secret
 
 ```json
 {
@@ -360,7 +360,7 @@ resource "null_resource" "validate_tags" {
   "Environment": "prod",
   "ManagedBy": "Terraform",
   "Owner": "Platform-Team",
-  "CostCenter": "ENG-001",
+  "CostCenter": "ENG-",
   "Component": "Security",
   "Service": "Secrets-Manager",
   "Description": "Snowflake credentials and configuration",
@@ -370,7 +370,7 @@ resource "null_resource" "validate_tags" {
 }
 ```
 
-## Monthly Tag Review Checklist
+ Monthly Tag Review Checklist
 
 - [ ] Run Cost Explorer reports by tag
 - [ ] Identify untagged or mis-tagged resources
@@ -380,47 +380,47 @@ resource "null_resource" "validate_tags" {
 - [ ] Check for orphaned resources (no owner tag)
 - [ ] Validate cost center codes are still valid
 
-## Reporting Queries
+ Reporting Queries
 
-### 1. List All Resources by Tenant
+ . List All Resources by Tenant
 
 ```bash
 aws resourcegroupstaggingapi get-resources \
   --tag-filters Key=TenantId,Values=company_a \
-  --region eu-west-2
+  --region eu-west-
 ```
 
-### 2. Find Untagged Resources
+ . Find Untagged Resources
 
 ```bash
 aws resourcegroupstaggingapi get-resources \
   --resource-type-filters "AWS::IoT::Thing" \
-  --region eu-west-2 | \
-  jq '.ResourceTagMappingList[] | select(.Tags | length == 0)'
+  --region eu-west- | \
+  jq '.ResourceTagMappingList[] | select(.Tags | length == )'
 ```
 
-### 3. Cost by Tag (AWS CLI)
+ . Cost by Tag (AWS CLI)
 
 ```bash
 aws ce get-cost-and-usage \
-  --time-period Start=2024-11-01,End=2024-11-30 \
+  --time-period Start=--,End=-- \
   --granularity MONTHLY \
   --metrics UnblendedCost \
   --group-by Type=TAG,Key=TenantId
 ```
 
-## Integration with Monitoring
+ Integration with Monitoring
 
-### CloudWatch Insights Query by Tenant
+ CloudWatch Insights Query by Tenant
 
 ```
 fields @timestamp, @message
 | filter TenantId = "company_a"
 | sort @timestamp desc
-| limit 100
+| limit 
 ```
 
-### CloudWatch Alarm with Tags
+ CloudWatch Alarm with Tags
 
 ```hcl
 resource "aws_cloudwatch_metric_alarm" "example" {
@@ -434,23 +434,23 @@ resource "aws_cloudwatch_metric_alarm" "example" {
 }
 ```
 
-## Tag Lifecycle
+ Tag Lifecycle
 
-1. **Creation**: Tags applied via Terraform during resource creation
-2. **Update**: Tags can be updated via Terraform (plan → apply)
-3. **Audit**: Monthly tag compliance review
-4. **Deprecation**: Remove obsolete tags via Terraform
-5. **Deletion**: Tags removed when resource is destroyed
+. Creation: Tags applied via Terraform during resource creation
+. Update: Tags can be updated via Terraform (plan → apply)
+. Audit: Monthly tag compliance review
+. Deprecation: Remove obsolete tags via Terraform
+. Deletion: Tags removed when resource is destroyed
 
-## References
+ References
 
 - [AWS Tagging Best Practices](https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html)
-- [AWS Cost Allocation Tags](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/cost-alloc-tags.html)
-- [Terraform Default Tags](https://www.terraform.io/language/providers/aws#default_tags)
+- [AWS Cost Allocation Tags](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv/cost-alloc-tags.html)
+- [Terraform Default Tags](https://www.terraform.io/language/providers/awsdefault_tags)
 
 ---
 
-**Document Version**: 1.0
-**Last Updated**: 2024-11-21
-**Next Review**: Monthly
-**Owner**: Platform Team
+Document Version: .
+Last Updated: --
+Next Review: Monthly
+Owner: Platform Team

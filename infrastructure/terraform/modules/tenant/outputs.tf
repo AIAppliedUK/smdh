@@ -5,36 +5,80 @@ output "tenant_id" {
   value       = var.tenant_id
 }
 
+output "deployment_mode" {
+  description = "Deployment mode: 'gateway' or 'network_server'"
+  value       = var.deployment_mode
+}
+
 output "thing_names" {
   description = "List of IoT Thing names created for this tenant"
-  value       = [for thing in aws_iot_thing.gateways : thing.name]
+  value = var.deployment_mode == "gateway" ? [
+    for thing in aws_iot_thing.gateways : thing.name
+  ] : [
+    aws_iot_thing.network_server[0].name
+  ]
 }
 
 output "thing_arns" {
   description = "List of IoT Thing ARNs"
-  value       = [for thing in aws_iot_thing.gateways : thing.arn]
+  value = var.deployment_mode == "gateway" ? [
+    for thing in aws_iot_thing.gateways : thing.arn
+  ] : [
+    aws_iot_thing.network_server[0].arn
+  ]
 }
 
 output "certificate_arns" {
   description = "List of certificate ARNs for this tenant's devices"
-  value       = [for cert in aws_iot_certificate.gateways : cert.arn]
-  sensitive   = true
+  value = var.deployment_mode == "gateway" ? [
+    for cert in aws_iot_certificate.gateways : cert.arn
+  ] : [
+    aws_iot_certificate.network_server[0].arn
+  ]
+  sensitive = true
 }
 
 output "certificate_pems" {
   description = "Map of thing names to certificate PEMs"
-  value = {
+  value = var.deployment_mode == "gateway" ? {
     for thing_name, cert in aws_iot_certificate.gateways : thing_name => cert.certificate_pem
+  } : {
+    (aws_iot_thing.network_server[0].name) = aws_iot_certificate.network_server[0].certificate_pem
   }
   sensitive = true
 }
 
 output "private_keys" {
   description = "Map of thing names to private keys"
-  value = {
+  value = var.deployment_mode == "gateway" ? {
     for thing_name, cert in aws_iot_certificate.gateways : thing_name => cert.private_key
+  } : {
+    (aws_iot_thing.network_server[0].name) = aws_iot_certificate.network_server[0].private_key
   }
   sensitive = true
+}
+
+# Network Server specific outputs (only populated in network_server mode)
+output "network_server_thing_name" {
+  description = "Name of the network server IoT thing (only in network_server mode)"
+  value       = var.deployment_mode == "network_server" ? aws_iot_thing.network_server[0].name : null
+}
+
+output "network_server_thing_arn" {
+  description = "ARN of the network server IoT thing (only in network_server mode)"
+  value       = var.deployment_mode == "network_server" ? aws_iot_thing.network_server[0].arn : null
+}
+
+output "network_server_certificate_pem" {
+  description = "Certificate PEM for network server (only in network_server mode)"
+  value       = var.deployment_mode == "network_server" ? aws_iot_certificate.network_server[0].certificate_pem : null
+  sensitive   = true
+}
+
+output "network_server_private_key" {
+  description = "Private key for network server (only in network_server mode)"
+  value       = var.deployment_mode == "network_server" ? aws_iot_certificate.network_server[0].private_key : null
+  sensitive   = true
 }
 
 output "policy_name" {
@@ -80,12 +124,15 @@ output "mqtt_topics" {
 output "deployment_config" {
   description = "Configuration for device deployment"
   value = {
-    tenant_id     = var.tenant_id
-    num_gateways  = length(aws_iot_thing.gateways)
-    mqtt_topics   = {
+    tenant_id       = var.tenant_id
+    deployment_mode = var.deployment_mode
+    num_devices     = var.deployment_mode == "gateway" ? length(aws_iot_thing.gateways) : 1
+    device_type     = var.deployment_mode == "gateway" ? "LoRaWAN Gateway" : "Network Server"
+    mqtt_topics     = {
       publish   = ["smdh/${var.tenant_id}/{site_id}/sensor-data"]
       subscribe = ["smdh/${var.tenant_id}/commands/#"]
     }
+    network_server_name = var.deployment_mode == "network_server" ? var.network_server_name : null
   }
 }
 

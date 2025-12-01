@@ -45,6 +45,36 @@ resource "aws_iot_thing_type" "lorawan_gateway" {
   }
 }
 
+# Create Thing Type for Network Servers (ChirpStack or similar)
+# Used when sensors connect via a centralized LoRaWAN Network Server
+# rather than gateways with built-in NS capabilities
+resource "aws_iot_thing_type" "network_server" {
+  name = var.network_server_thing_type_name
+
+  properties {
+    description = "LoRaWAN Network Server (ChirpStack or similar) for SMDH platform"
+    searchable_attributes = [
+      "tenant_id",
+      "deployment_type",
+      "server_type"
+    ]
+  }
+
+  tags = merge(
+    var.tags,
+    {
+      Name           = var.network_server_thing_type_name
+      Description    = "SMDH LoRaWAN Network Server Thing Type"
+      ThingType      = "NetworkServer"
+      DeploymentMode = "centralized"
+    }
+  )
+
+  lifecycle {
+    ignore_changes = [tags_all]
+  }
+}
+
 # Create Thing Type for DevTank OSM devices
 resource "aws_iot_thing_type" "devtank_osm" {
   name = var.devtank_thing_type_name
@@ -246,7 +276,7 @@ resource "aws_iot_thing_type" "light_sensor" {
   name = var.light_sensor_thing_type_name
 
   properties {
-    description = "Light Sensors (illuminance, color temperature, CRI) for SMDH platform"
+    description = "Light Sensors (illuminance, colour temperature, CRI) for SMDH platform"
     searchable_attributes = [
       "tenant_id",
       "site_id",

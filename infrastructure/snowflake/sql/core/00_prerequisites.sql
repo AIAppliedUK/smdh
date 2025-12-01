@@ -29,7 +29,7 @@ SELECT
 SELECT
     CASE
         WHEN CURRENT_REGION() LIKE '%eu-west-2%' OR CURRENT_REGION() LIKE '%london%'
-        THEN '✓ PASS: Account is in eu-west-2 (London) region'
+        THEN '[OK] PASS: Account is in eu-west-2 (London) region'
         ELSE '✗ WARNING: Account is not in eu-west-2. Kinesis integration may have higher latency.'
     END AS region_check;
 
@@ -41,23 +41,23 @@ SELECT '2. REQUIRED FEATURES' AS check_section;
 
 -- Check for Streams support (required for CDC)
 SELECT
-    '✓ Streams are available in all Enterprise editions' AS streams_check;
+    '[OK] Streams are available in all Enterprise editions' AS streams_check;
 
 -- Check for Tasks support (required for ETL automation)
 SELECT
-    '✓ Tasks are available in all Enterprise editions' AS tasks_check;
+    '[OK] Tasks are available in all Enterprise editions' AS tasks_check;
 
 -- Check for Dynamic Tables support (required for real-time aggregations)
 SELECT
     CASE
         WHEN CURRENT_VERSION() >= '7.0'
-        THEN '✓ PASS: Dynamic Tables are supported (Snowflake 7.0+)'
+        THEN '[OK] PASS: Dynamic Tables are supported (Snowflake 7.0+)'
         ELSE '✗ WARNING: Dynamic Tables require Snowflake 7.0+. Current version: ' || CURRENT_VERSION()
     END AS dynamic_tables_check;
 
 -- Check for VARIANT support (required for semi-structured sensor data)
 SELECT
-    '✓ VARIANT type is available in all editions' AS variant_check;
+    '[OK] VARIANT type is available in all editions' AS variant_check;
 
 -- ============================================================================
 -- 3. Permission Checks
@@ -73,7 +73,7 @@ SELECT
             WHERE GRANTEE_NAME = CURRENT_ROLE()
             AND PRIVILEGE = 'CREATE DATABASE'
         )
-        THEN '✓ PASS: Current role can create databases'
+        THEN '[OK] PASS: Current role can create databases'
         ELSE '✗ FAIL: Current role lacks CREATE DATABASE privilege'
     END AS create_database_check;
 
@@ -85,7 +85,7 @@ SELECT
             WHERE GRANTEE_NAME = CURRENT_ROLE()
             AND PRIVILEGE = 'CREATE WAREHOUSE'
         )
-        THEN '✓ PASS: Current role can create warehouses'
+        THEN '[OK] PASS: Current role can create warehouses'
         ELSE '✗ FAIL: Current role lacks CREATE WAREHOUSE privilege'
     END AS create_warehouse_check;
 
@@ -97,7 +97,7 @@ SELECT
             WHERE GRANTEE_NAME = CURRENT_ROLE()
             AND PRIVILEGE = 'CREATE ROLE'
         )
-        THEN '✓ PASS: Current role can create roles'
+        THEN '[OK] PASS: Current role can create roles'
         ELSE '✗ FAIL: Current role lacks CREATE ROLE privilege'
     END AS create_role_check;
 
@@ -150,7 +150,7 @@ SELECT '6. NETWORK CONFIGURATION' AS check_section;
 SELECT
     CASE
         WHEN COUNT(*) = 0
-        THEN '✓ PASS: No network policies defined (Snowflake Openflow can connect to Kinesis)'
+        THEN '[OK] PASS: No network policies defined (Snowflake Openflow can connect to Kinesis)'
         ELSE '⚠ WARNING: ' || COUNT(*) || ' network policy(ies) found. Verify Snowflake Openflow can access AWS Kinesis in eu-west-2.'
     END AS network_policy_check
 FROM SNOWFLAKE.ACCOUNT_USAGE.NETWORK_POLICIES
@@ -173,10 +173,10 @@ SELECT '7. KINESIS INTEGRATION REQUIREMENTS' AS check_section;
 -- This check verifies Snowflake account readiness
 
 SELECT
-    '✓ Snowflake Openflow connector supports Kinesis Data Streams' AS openflow_check_1;
+    '[OK] Snowflake Openflow connector supports Kinesis Data Streams' AS openflow_check_1;
 
 SELECT
-    '✓ Cross-account IAM role will be configured in AWS' AS openflow_check_2;
+    '[OK] Cross-account IAM role will be configured in AWS' AS openflow_check_2;
 
 SELECT
     '⚠ Ensure AWS Kinesis stream exists in eu-west-2 before running 03_openflow_connector.sql' AS openflow_check_3;
@@ -191,7 +191,7 @@ SELECT '8. DATA PROTECTION FEATURES' AS check_section;
 SELECT
     CASE
         WHEN CURRENT_ACCOUNT_EDITION() LIKE '%ENTERPRISE%'
-        THEN '✓ PASS: Enterprise Edition detected. Time Travel retention up to 90 days available.'
+        THEN '[OK] PASS: Enterprise Edition detected. Time Travel retention up to 90 days available.'
         ELSE '⚠ WARNING: Non-Enterprise edition. Time Travel retention limited to 1 day.'
     END AS edition_check;
 

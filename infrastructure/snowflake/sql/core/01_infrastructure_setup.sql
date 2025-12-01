@@ -142,10 +142,58 @@ CREATE TABLE IF NOT EXISTS tenant_users (
 COMMENT = 'User access tracking per tenant. Tracks all users with access to tenant data.';
 
 -- ============================================================================
--- 5. Create Device Registry
+-- 5. Create Site Registry (created before devices due to FK dependency)
 -- ============================================================================
 
-SELECT '5. Creating Device Registry...' AS step;
+SELECT '5. Creating Site Registry...' AS step;
+
+CREATE TABLE IF NOT EXISTS sites (
+    site_id VARCHAR(100) PRIMARY KEY,
+    tenant_id VARCHAR(100) NOT NULL,
+
+    -- Site information
+    site_name VARCHAR(500) NOT NULL,
+    site_type VARCHAR(100),
+
+    -- AWS IoT Thing Group for site (all devices at this site)
+    site_thing_group_name VARCHAR(255),
+    site_thing_group_arn VARCHAR(500),
+
+    -- Location
+    address VARCHAR(1000),
+    city VARCHAR(255),
+    country VARCHAR(100),
+    postal_code VARCHAR(50),
+    latitude FLOAT,
+    longitude FLOAT,
+    timezone VARCHAR(100),
+
+    -- Status
+    status VARCHAR(50) DEFAULT 'active',
+    created_date TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    activated_date TIMESTAMP_NTZ,
+
+    -- Device counts (synced from AWS IoT)
+    total_devices NUMBER(10) DEFAULT 0,
+    active_devices NUMBER(10) DEFAULT 0,
+    last_device_sync TIMESTAMP_NTZ,
+
+    -- Metadata
+    site_metadata VARIANT,
+
+    CONSTRAINT fk_site_tenant FOREIGN KEY (tenant_id)
+        REFERENCES tenants(tenant_id) NOT ENFORCED
+
+    -- Note: Snowflake does not support CHECK constraints
+    -- Valid values for status: 'provisioning', 'active', 'suspended', 'decommissioned'
+)
+COMMENT = 'Registry of manufacturing sites per tenant. Tracks site locations, thing groups, and device counts.';
+
+-- ============================================================================
+-- 6. Create Device Registry
+-- ============================================================================
+
+SELECT '6. Creating Device Registry...' AS step;
 
 CREATE TABLE IF NOT EXISTS devices (
     -- Primary identifiers
@@ -197,54 +245,6 @@ CREATE TABLE IF NOT EXISTS devices (
     -- Valid values for status: 'provisioning', 'active', 'maintenance', 'decommissioned'
 )
 COMMENT = 'Registry of all IoT devices and gateways. Tracks device lifecycle, certificates, thing groups, and connectivity.';
-
--- ============================================================================
--- 6. Create Site Registry
--- ============================================================================
-
-SELECT '6. Creating Site Registry...' AS step;
-
-CREATE TABLE IF NOT EXISTS sites (
-    site_id VARCHAR(100) PRIMARY KEY,
-    tenant_id VARCHAR(100) NOT NULL,
-
-    -- Site information
-    site_name VARCHAR(500) NOT NULL,
-    site_type VARCHAR(100),
-
-    -- AWS IoT Thing Group for site (all devices at this site)
-    site_thing_group_name VARCHAR(255),
-    site_thing_group_arn VARCHAR(500),
-
-    -- Location
-    address VARCHAR(1000),
-    city VARCHAR(255),
-    country VARCHAR(100),
-    postal_code VARCHAR(50),
-    latitude FLOAT,
-    longitude FLOAT,
-    timezone VARCHAR(100),
-
-    -- Status
-    status VARCHAR(50) DEFAULT 'active',
-    created_date TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
-    activated_date TIMESTAMP_NTZ,
-
-    -- Device counts (synced from AWS IoT)
-    total_devices NUMBER(10) DEFAULT 0,
-    active_devices NUMBER(10) DEFAULT 0,
-    last_device_sync TIMESTAMP_NTZ,
-
-    -- Metadata
-    site_metadata VARIANT,
-
-    CONSTRAINT fk_site_tenant FOREIGN KEY (tenant_id)
-        REFERENCES tenants(tenant_id) NOT ENFORCED
-
-    -- Note: Snowflake does not support CHECK constraints
-    -- Valid values for status: 'provisioning', 'active', 'suspended', 'decommissioned'
-)
-COMMENT = 'Registry of manufacturing sites per tenant. Tracks site locations, thing groups, and device counts.';
 
 -- ============================================================================
 -- 7. Create Data Ingestion Tracking
@@ -647,16 +647,16 @@ UNION ALL SELECT '║  SMDH Infrastructure Setup Complete                       
 UNION ALL SELECT '╚════════════════════════════════════════════════════════════╝'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Created Resources:'
-UNION ALL SELECT '  ✓ Database: smdh_infrastructure'
-UNION ALL SELECT '  ✓ Schemas: tenant_configs, monitoring, audit'
-UNION ALL SELECT '  ✓ Tables:'
+UNION ALL SELECT '  [OK] Database: smdh_infrastructure'
+UNION ALL SELECT '  [OK] Schemas: tenant_configs, monitoring, audit'
+UNION ALL SELECT '  [OK] Tables:'
 UNION ALL SELECT '      • tenants (with thing group tracking)'
 UNION ALL SELECT '      • sites (with site thing group tracking)'
 UNION ALL SELECT '      • devices (with thing group memberships)'
 UNION ALL SELECT '      • tenant_users, ingestion_metrics, task_execution_log, alerts'
 UNION ALL SELECT '      • user_access_log, data_modification_log'
-UNION ALL SELECT '  ✓ Roles: smdh_infrastructure_admin, smdh_monitoring'
-UNION ALL SELECT '  ✓ Monitoring Views:'
+UNION ALL SELECT '  [OK] Roles: smdh_infrastructure_admin, smdh_monitoring'
+UNION ALL SELECT '  [OK] Monitoring Views:'
 UNION ALL SELECT '      • v_active_tenants - Active tenant summary'
 UNION ALL SELECT '      • v_device_connectivity - Device connectivity overview'
 UNION ALL SELECT '      • v_site_device_summary - Site-level metrics (uses thing groups)'

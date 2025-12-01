@@ -10,7 +10,7 @@ The SMDH platform is a multi-tenant IoT analytics system that collects data from
 
 **MQTT is the universal IoT protocol.**
 
-The SMDH platform uses AWS IoT Core as a managed MQTT broker. All sensor data sources connect via MQTT - either directly (DevTank OSM with Wi-Fi) or through LoRaWAN gateways (Milesight UG65). This single, protocol-native approach provides:
+The SMDH platform uses AWS IoT Core as a managed MQTT broker. All sensor data arrives via LoRaWAN gateways (e.g., Milesight UG65) that authenticate to AWS IoT Core using X.509 certificates. DevTank OpenSmartMonitor (OSM) devices connect as LoRaWAN Class A sensors to these gateways—they cannot authenticate directly to AWS IoT Core due to hardware limitations that prevent certificate storage. This gateway-mediated approach provides:
 
 - Persistent connections for high-frequency sensors (1 Hz updates)
 - Native QoS guarantees (at-least-once delivery)
@@ -25,7 +25,7 @@ No custom validation layers, no HTTP polling overhead, no protocol conversions�
 | ----------------------------- | ------------------------------------------ |
 | **Up to 30 separate tenants** | Database-per-tenant isolation in Snowflake |
 | **5-10 sensors per site**     | Modest but steady streaming data volume    |
-| **MQTT-native sensors**       | AWS IoT Core as central MQTT broker        |
+| **LoRaWAN sensors via gateways** | AWS IoT Core as central MQTT broker     |
 | **Real-time monitoring**      | Sub-minute data latency requirements       |
 | **Distributed gateways**      | Multi-AZ deployment, regional endpoints    |
 
@@ -37,7 +37,7 @@ No custom validation layers, no HTTP polling overhead, no protocol conversions�
 
 | Requirement                          | Description                                             | Architecture Solution                                            |
 | ------------------------------------ | ------------------------------------------------------- | ---------------------------------------------------------------- |
-| **FR-001: MQTT ingestion**           | Support MQTT-based sensors via gateways and Wi-Fi       | IoT Core as managed MQTT broker with multi-AZ high availability |
+| **FR-001: MQTT ingestion**           | Support LoRaWAN sensors via authenticated gateways      | IoT Core as managed MQTT broker with multi-AZ high availability |
 | **FR-002: Real-time processing**     | <1 minute from sensor to dashboard for critical metrics | Streaming architecture with Kinesis and Dynamic Tables           |
 | **FR-003: Historical analysis**      | Store 2+ years of data for trend analysis               | Snowflake with Time Travel and configurable retention            |
 | **FR-004: Multi-tenancy**            | Complete data isolation between customers               | Database-per-tenant in Snowflake, X.509 certs per tenant         |
@@ -59,6 +59,7 @@ No custom validation layers, no HTTP polling overhead, no protocol conversions�
 | ----------------------------------------------------- | ---------------------------------------------------------- |
 | **MQTT devices cannot connect directly to Snowflake** | Must use AWS IoT Core as managed MQTT broker               |
 | **Snowflake has no native MQTT support**              | Requires intermediate streaming service (Kinesis)          |
+| **DevTank OSM cannot store X.509 certificates**       | Sensors connect via LoRaWAN to gateways; gateways hold certs |
 | **X.509 certificates expire**                         | Automated rotation via AWS Certificate Manager or Secrets  |
 | **IoT devices require network connectivity**          | Multi-AZ regional deployment, connection state monitoring  |
 
@@ -83,7 +84,7 @@ Acts as the MQTT broker for all IoT devices. Maintains persistent connections wi
 
 **Why it's needed:**
 
-All sensor data arrives via MQTT through Milesight UG65 gateways and DevTank OSM devices, so AWS IoT Core provides the central authentication point for distributed edge devices, manages certificate lifecycles without custom application logic, keeps persistent connections for high-frequency sensors (1 Hz+), and integrates natively with Kinesis through the IoT Rules Engine.
+All sensor data arrives via MQTT through LoRaWAN gateways (e.g., Milesight UG65). DevTank OSM devices connect as LoRaWAN sensors to these gateways—they cannot store X.509 certificates and therefore cannot authenticate directly to AWS IoT Core. The gateways are the authenticated devices that connect to IoT Core, providing the central authentication point for distributed edge deployments, managing certificate lifecycles without custom application logic, maintaining persistent connections for high-frequency sensor streams, and integrating natively with Kinesis through the IoT Rules Engine.
 
 **Traceability**
 
@@ -125,17 +126,9 @@ Provides hierarchical device management and organization across tenants and site
 
 **SMDH Thing Group Hierarchy:**
 
-```
-Tenant Thing Group (smdh-tenant-{tenant_id})
-├── Site Thing Group (smdh-{tenant_id}-site_001)
-│   ├── Gateway: smdh-gateway-{tenant_id}-site_001-gw_001
-│   ├── Gateway: smdh-gateway-{tenant_id}-site_001-gw_002
-│   └── ... (additional gateways per site)
-├── Site Thing Group (smdh-{tenant_id}-site_002)
-│   └── Gateway: smdh-gateway-{tenant_id}-site_002-gw_001
-├── Dynamic Group: smdh-{tenant_id}-disconnected (auto-tracks offline devices)
-└── Dynamic Group: smdh-{tenant_id}-active (auto-tracks active devices)
-```
+![Thing Group Hierarchy](diagrams/SMDH_Thing_Group_Hierarchy.drawio.png)
+
+*Figure: AWS IoT Thing Groups hierarchy showing tenant → site → device organization with dynamic groups for health monitoring. [Edit diagram: diagrams/SMDH_Thing_Group_Hierarchy.drawio]*
 
 **Why Thing Groups are needed:**
 
@@ -171,6 +164,70 @@ aws iot list-things-in-thing-group \
 - FR-005: Enables efficient device connection state monitoring
 - NFR-001: Scales to support 300+ devices across 30 tenants
 - NFR-005: Reduces operational overhead for device management
+
+#### 3.1.4 OSM Connectivity Architecture
+
+**Device Constraint:**
+
+DevTank OpenSmartMonitor (OSM) devices cannot store or present X.509 client certificates due to hardware limitations. This means they cannot perform mutual TLS authentication directly with AWS IoT Core. However, OSM devices support two connectivity methods:
+
+- **LoRaWAN** (Class A, EU868 band) with DevEUI/AppKey authentication
+- **WiFi** with MQTT username/password authentication (no X.509 support)
+
+Both methods require an intermediate component (gateway or network server) that holds X.509 certificates and authenticates to AWS IoT Core on behalf of the sensors.
+
+**Architecture:**
+
+![LoRaWAN Architecture](diagrams/SMDH_LoRaWAN_Architecture.drawio.png)
+
+*Figure: OSM connectivity options showing two paths to AWS IoT Core—Option A via LoRaWAN gateway with built-in Network Server, Option B via WiFi MQTT to ChirpStack. Both options use X.509 certificate authentication at the gateway/NS level since OSM devices cannot store certificates. [Edit diagram: diagrams/SMDH_LoRaWAN_Architecture.drawio]*
+
+**Key Components:**
+
+1. **DevTank OSM Sensors**
+   - Support both LoRaWAN (Class A, EU868 band) and WiFi connectivity
+   - Generate DevEUI and AppKey for LoRaWAN network authentication
+   - WiFi mode supports MQTT with username/password authentication (NOT X.509)
+   - No X.509 certificate storage capability
+   - Long range, low power operation via LoRaWAN; local connectivity via WiFi
+
+2. **LoRaWAN Gateway (e.g., Milesight UG65)** — Option A
+   - Receives LoRaWAN radio packets from OSM sensors
+   - Stores X.509 certificates for AWS IoT Core authentication
+   - Forwards uplinks via MQTT with TLS mutual authentication
+   - Provides offline message buffering during network outages
+   - Built-in LoRaWAN Network Server capability (simplest option)
+
+3. **ChirpStack Network Server** — Option B
+   - Open-source Network Server for centralised device management
+   - OSM sensors connect via WiFi MQTT (username/password authentication)
+   - ChirpStack bridges to AWS IoT Core using X.509 certificates
+   - Provides central management console for multi-site deployments
+   - Native AWS IoT Core integration
+
+**Benefits of This Architecture:**
+
+| Benefit | Option A (LoRaWAN) | Option B (WiFi/ChirpStack) |
+|---------|-------------------|---------------------------|
+| **Range** | Up to several km | Local WiFi coverage |
+| **Power** | Low (battery-friendly) | Higher (WiFi radio) |
+| **Infrastructure** | Gateway only | ChirpStack server required |
+| **Central Management** | Per-gateway | Centralised |
+| **X.509 Authentication** | Gateway holds certs | ChirpStack holds certs |
+
+**Common benefits across both options:**
+- OSM devices never need to store X.509 certificates
+- Clean multi-tenant isolation via MQTT topic structure
+- Strong security (LoRaWAN AES128 or WiFi WPA2, plus TLS 1.3 to AWS)
+- Industrial reliability
+
+**Traceability:**
+
+- FR-001: Enables sensor connectivity without direct certificate support
+- FR-004: Maintains tenant isolation through gateway authentication
+- NFR-001: Scales to support 5-10 sensors per gateway, multiple gateways per site
+- NFR-002: Gateway buffering provides resilience during network outages
+- NFR-003: End-to-end encryption (LoRaWAN AES128 + TLS 1.3 to AWS)
 
 ### 3.2 IoT Rules Engine
 
@@ -274,50 +331,57 @@ Centralised monitoring and logging for all AWS services. Collects metrics, store
 
 **Scenario:** Manufacturing facility with multiple sensor types sending continuous data
 
+![MQTT Data Flow](diagrams/SMDH_Data_Flow_Paths-MQTT%20Data%20Flow.drawio.png)
+
+*Figure: End-to-end data flow from LoRaWAN sensors through AWS IoT Core to Snowflake. [Edit diagram: diagrams/SMDH_Data_Flow_Paths.drawio]*
+
 **Devices in scope:**
 
-- Milesight UG65 LoRaWAN gateways (collect sensor data via 868 MHz radio)
-- DevTank OpenSmartMonitor (air quality, energy, environment via Wi-Fi MQTT or LoRaWAN)
-- Generic LoRaWAN sensors (temperature, vibration, state monitoring)
+- Milesight UG65 LoRaWAN gateways (authenticated connection to AWS IoT Core)
+- DevTank OpenSmartMonitor (air quality, energy, environment via LoRaWAN to gateway)
+- Generic LoRaWAN sensors (temperature, vibration, state monitoring via gateway)
 
 **End-to-end data flow:**
 
 ```
-1. Sensor Generation
-   └─ Milesight UG65 Gateway or DevTank OSM
-   └─ Frequency: 1 Hz (sensors) to 1 min (air quality)
+1. Sensor Generation (LoRaWAN)
+   └─ DevTank OSM and other LoRaWAN sensors
+   └─ Transmit via LoRaWAN Class A (EU868 band)
+   └─ Frequency: 1 Hz (sensors) to 15 min (air quality)
 
-2. MQTT Publish (TLS 1.3)
-   └─ Milesight UG65 → AWS IoT Core
+2. Gateway Aggregation
+   └─ Milesight UG65 receives LoRaWAN uplinks
+   └─ Built-in Network Server decodes payloads
+   └─ Buffers messages during network outages
+
+3. MQTT Publish (TLS 1.3)
+   └─ Milesight UG65 Gateway → AWS IoT Core
       Topic: smdh/{tenant_id}/sensor-data
-      Authentication: X.509 certificate
-   └─ DevTank OSM → AWS IoT Core (Wi-Fi)
-      Topic: smdh/{tenant_id}/devtank-data
-      Authentication: X.509 certificate
+      Authentication: X.509 certificate (gateway holds cert)
 
-3. IoT Rules Engine Routing
+4. IoT Rules Engine Routing
    └─ SQL: SELECT *, '{tenant_id}' as tenant_id FROM 'smdh/+/+'
    └─ Validates message structure
    └─ Routes to Kinesis with tenant partition key
 
-4. Kinesis Buffering & Ordering
+5. Kinesis Buffering & Ordering
    └─ Partition: {tenant_id}
    └─ Guarantees: In-order delivery per tenant, 24h retention
    └─ Throughput: On-demand, auto-scales with message volume
 
-5. Snowflake Openflow Integration
+6. Snowflake Openflow Integration
    └─ Native Kinesis connector (preview feature)
    └─ Reads from Kinesis stream
    └─ Writes to smdh_tenant_{tenant_id}.raw.sensor_readings
    └─ Latency: 5-15 seconds end-to-end
 
-6. Snowflake Processing
+7. Snowflake Processing
    └─ Streams detect new data in raw tables
    └─ Tasks normalize and transform (Python/SQL)
    └─ Dynamic Tables aggregate to business metrics
    └─ Cortex ML detects anomalies
 
-7. Analytics & Visualization
+8. Analytics & Visualization
    └─ Power BI: DirectQuery for real-time dashboards
    └─ Streamlit: Native portal within Snowflake
    └─ Users see data within 1-2 minutes of sensor reading
@@ -325,9 +389,9 @@ Centralised monitoring and logging for all AWS services. Collects metrics, store
 
 **Why this architecture:**
 
-- All sensors are MQTT-native (gateways and devices)
-- Persistent connections handle continuous 1 Hz streams
-- X.509 certificates provide strong device authentication
+- LoRaWAN provides long-range, low-power sensor connectivity
+- Gateways handle all X.509 authentication (sensors cannot store certs)
+- Persistent gateway connections handle continuous sensor streams
 - Topic-based routing inherently multi-tenant
 - Kinesis provides buffering without custom code
 - No Lambda/validation layers = lower latency and cost
@@ -402,16 +466,9 @@ Centralised monitoring and logging for all AWS services. Collects metrics, store
 
 The SMDH platform operates in a single production AWS account in `eu-west-2` (London region).
 
-```
-AWS Account: 123456789012 (smdh-production)
-├─ Region: eu-west-2 (London) - Primary
-├─ Services:
-│  ├─ AWS IoT Core (Global via regional endpoint)
-│  ├─ Kinesis Data Streams (Regional)
-│  ├─ Secrets Manager (Regional)
-│  └─ CloudWatch (Regional)
-└─ High Availability: Multi-AZ within region
-```
+![AWS IoT Core Architecture](diagrams/SMDH_IoT_Core_Architecture.drawio.png)
+
+*Figure: SMDH single-account AWS architecture in eu-west-2 showing managed services (IoT Core, Kinesis, CloudWatch) with Snowflake integration. [Edit diagram: diagrams/SMDH_IoT_Core_Architecture.drawio]*
 
 **Rationale:**
 
@@ -424,63 +481,9 @@ AWS Account: 123456789012 (smdh-production)
 
 **VPC Design Principle:** IoT devices are internet-connected; AWS services are either fully managed (serverless) or connect via managed endpoints.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│ AWS Account (eu-west-2)                                 │
-├─────────────────────────────────────────────────────────┤
-│                                                          │
-│  ┌────────────────────────────────────────────────────┐ │
-│  │ AWS IoT Core (Fully Managed - Public Endpoint)     │ │
-│  ├────────────────────────────────────────────────────┤ │
-│  │ - Regional endpoint: *.iot.eu-west-2.amazonaws.com │ │
-│  │ - No VPC required (managed service)                │ │
-│  │ - TLS 1.2/1.3 encryption in transit                │ │
-│  │ - Multi-AZ redundancy built-in                     │ │
-│  └────────────────────────────────────────────────────┘ │
-│                         ↓                                │
-│  ┌────────────────────────────────────────────────────┐ │
-│  │ IoT Rules Engine (Managed)                         │ │
-│  │ Routes MQTT → Kinesis with tenant context          │ │
-│  └────────────────────────────────────────────────────┘ │
-│                         ↓                                │
-│  ┌────────────────────────────────────────────────────┐ │
-│  │ Kinesis Data Streams (Fully Managed)               │ │
-│  ├────────────────────────────────────────────────────┤ │
-│  │ - Multi-AZ by default                             │ │
-│  │ - No VPC configuration needed                      │ │
-│  │ - Accessed via AWS API (no IP addresses)           │ │
-│  └────────────────────────────────────────────────────┘ │
-│                         ↓                                │
-│  ┌────────────────────────────────────────────────────┐ │
-│  │ Snowflake Openflow Connector                       │ │
-│  │ (Runs within Snowflake account, not in AWS VPC)    │ │
-│  │ Reads from Kinesis via IAM role cross-account      │ │
-│  └────────────────────────────────────────────────────┘ │
-│                                                          │
-│  ┌────────────────────────────────────────────────────┐ │
-│  │ Secrets Manager (Fully Managed)                    │ │
-│  ├────────────────────────────────────────────────────┤ │
-│  │ - Stores Snowflake private key                     │ │
-│  │ - No VPC needed (managed service)                  │ │
-│  │ - Accessed via AWS API                             │ │
-│  └────────────────────────────────────────────────────┘ │
-│                                                          │
-│  ┌────────────────────────────────────────────────────┐ │
-│  │ CloudWatch (Fully Managed)                         │ │
-│  ├────────────────────────────────────────────────────┤ │
-│  │ - Metrics from IoT Core, Kinesis, Rules Engine     │ │
-│  │ - Logs from all AWS services                       │ │
-│  │ - No VPC needed (managed service)                  │ │
-│  └────────────────────────────────────────────────────┘ │
-│                                                          │
-└─────────────────────────────────────────────────────────┘
+![VPC Configuration](diagrams/SMDH_VPC_Configuration.drawio.png)
 
-External Connections:
-├─ Internet (Gateways/Devices) → AWS IoT Core (Public)
-│  └─ TLS 1.3, port 8883 (MQTT)
-└─ Snowflake (Cross-Account) → Kinesis via IAM Role
-   └─ Service-to-service, no internet
-```
+*Figure: Network connectivity showing LoRaWAN gateways connecting to AWS IoT Core over TLS 1.3 (port 8883), with internal routing through IoT Rules Engine to Kinesis and Snowflake Openflow Connector. [Edit diagram: diagrams/SMDH_VPC_Configuration.drawio]*
 
 ### 7.3 No VPC Required
 
@@ -726,6 +729,7 @@ The architecture supports future changes through:
 | **Web Framework**          | Streamlit in Snowflake   | React + ECS            | Faster development, no separate infrastructure |
 | **Multi-tenancy**          | Database-per-tenant      | Row-level security     | Stronger isolation, simpler operations         |
 | **Device Authentication**  | X.509 certificates       | Pre-shared keys        | Can be revoked, non-repudiation                |
+| **Sensor Connectivity**    | LoRaWAN via gateways     | Direct Wi-Fi MQTT      | OSM cannot store X.509 certs; gateways handle auth |
 | **Device Organization**    | AWS IoT Thing Groups     | Custom database tables | Native AWS feature, enables bulk operations, automatic hierarchy |
 | **Network Design**         | No VPC (managed only)    | Custom VPC             | Simpler, IoT needs internet-facing endpoint    |
 | **Regional Deployment**    | Single region (eu-west-2) | Multi-region          | Cost-effective, compliance, gateway proximity  |
@@ -1175,17 +1179,26 @@ Configuration:
 - Offline Buffer: 10,000 messages (store-and-forward)
 ```
 
-**Step 6.2: DevTank OSM Setup (Wi-Fi MQTT)**
+**Step 6.2: Register LoRaWAN Sensors with Gateway**
 
 ```
-Configuration:
-- Server: {iot-endpoint}.iot.eu-west-2.amazonaws.com
-- Port: 8883 (MQTT with TLS)
-- Wi-Fi Network: Company A production network
-- Certificate: Upload company-a-osm-cert.pem
-- Topic: smdh/company_a/devtank-data
-- QoS: 1
-- Frequency: 1-15 minute intervals (configurable)
+Component: Milesight UG65 Network Server
+Purpose: Register DevTank OSM and other LoRaWAN sensors
+
+For each DevTank OSM sensor:
+- DevEUI: Obtained from device label (e.g., A84041XXXXXXXX)
+- AppKey: Obtained from DevTank device documentation
+- Activation: OTAA (Over-The-Air Activation)
+- Device Profile: Class A
+- Payload Decoder: DevTank JavaScript decoder (provided by DevTank)
+
+Network Server Configuration:
+- Mode: Built-in NS (Milesight UG65) or external (TTN/ChirpStack)
+- Application Output: MQTT to AWS IoT Core endpoint
+- Topic Mapping: smdh/{tenant_id}/sensor-data
+
+Note: OSM devices do NOT connect directly to AWS IoT Core.
+The gateway aggregates all LoRaWAN uplinks and publishes via MQTT.
 ```
 
 ### 13.4 Validation Tests
@@ -1200,7 +1213,7 @@ Configuration:
 | **Dynamic Group**         | Check disconnected devices dynamic group    | Empty initially, updates when device disconnects |
 | **Message Ingestion**     | Send test message from gateway              | Message appears in Snowflake within 30s |
 | **Tenant Topic ACLs**     | Try to publish to another tenant's topic    | Access denied (403 error)               |
-| **DevTank Wi-Fi**         | Connect DevTank OSM via Wi-Fi               | Connects, sends data to IoT Core        |
+| **LoRaWAN Sensor Join**   | Register DevTank OSM with gateway NS        | OTAA join succeeds, uplinks received    |
 | **Data Routing**          | Verify data in correct Kinesis partition    | Partition key matches tenant_id         |
 | **User Access**           | Login to Streamlit portal with SSO          | Only see company_a data                 |
 | **Certificate Rotation**  | Trigger cert rotation via Secrets Manager   | New cert deployed, old connections drop |
@@ -1416,3 +1429,146 @@ The AWS layer is intentionally minimal and focused—just four core services (Io
 | **X.509**          | Standard for public key certificates                             |
 | **SAML**           | Security Assertion Markup Language - SSO protocol                |
 | **IaC**            | Infrastructure as Code - Managing infrastructure through code    |
+
+## Appendix D: Recommended LoRaWAN Network Server Options
+
+### D.1 Overview
+
+DevTank OSM devices cannot store X.509 certificates and therefore cannot authenticate directly to AWS IoT Core. A LoRaWAN Network Server is required to bridge the gap between LoRaWAN sensors and AWS IoT Core's MQTT interface.
+
+**Key Requirement:** The Network Server must be able to publish to AWS IoT Core using X.509 certificate-based mutual TLS authentication.
+
+### D.2 Recommended Options
+
+SMDH supports two Network Server configurations, both of which provide native AWS IoT Core integration:
+
+| Option | Description | Best For |
+|--------|-------------|----------|
+| **Milesight UG65 Built-in NS** | Gateway with integrated Network Server | Single-site deployments, simplest setup |
+| **ChirpStack** | Open-source Network Server | Multi-site deployments, central management |
+
+### D.3 Option 1: Milesight UG65 Built-in Network Server (Recommended for Simplicity)
+
+The Milesight UG65 gateway includes a built-in LoRaWAN Network Server, eliminating the need for external infrastructure.
+
+**Architecture:**
+
+![Milesight UG65 Built-in NS Architecture](diagrams/SMDH_Network_Server_Options-Milesight%20UG65%20Built-in%20NS.drawio.png)
+
+*Figure: Milesight UG65 gateway with built-in Network Server—simplest deployment option with gateway handling LoRaWAN reception, payload decoding, and MQTT publishing to AWS IoT Core with X.509 authentication. [Edit diagram: diagrams/SMDH_Network_Server_Options.drawio - Page 1]*
+
+**Capabilities:**
+
+- Receives LoRaWAN uplinks from DevTank OSM and other Class A devices
+- Performs OTAA join-accept and session key management
+- Decodes payloads using JavaScript decoder (DevTank-provided)
+- Publishes decoded JSON directly to AWS IoT Core via MQTT
+- Stores X.509 certificates for AWS IoT Core authentication
+- Buffers messages during network outages (store-and-forward)
+
+**Configuration Summary:**
+
+1. Register DevTank OSM devices with DevEUI and AppKey
+2. Configure JavaScript payload decoder
+3. Set MQTT output to AWS IoT Core endpoint
+4. Upload X.509 certificate and private key
+5. Configure topic mapping: `smdh/{tenant_id}/sensor-data`
+
+**Advantages:**
+
+- No external Network Server infrastructure required
+- Single device handles gateway + NS + AWS integration
+- Lower operational complexity
+- Suitable for 5-10 sensors per site
+
+**Limitations:**
+
+- Each gateway manages its own devices (no central view)
+- Configuration must be replicated across multiple gateways
+- Less suitable for large-scale multi-site deployments
+
+### D.4 Option 2: ChirpStack (Recommended for Scale)
+
+ChirpStack is an open-source LoRaWAN Network Server with native AWS IoT Core integration.
+
+**Architecture:**
+
+![ChirpStack Architecture](diagrams/SMDH_Network_Server_Options-ChirpStack%20Network%20Server.drawio.png)
+
+*Figure: ChirpStack centralised Network Server—recommended for multi-site deployments with central device management, unified configuration, and native AWS IoT Core integration via X.509 certificates. [Edit diagram: diagrams/SMDH_Network_Server_Options.drawio - Page 2]*
+
+**Capabilities:**
+
+- Centralised device management across multiple gateways
+- Native AWS IoT Core integration with X.509 authentication
+- Web-based administration console
+- Device profiles and payload decoders
+- Multi-tenant application support
+- API for automation and integration
+
+**AWS IoT Core Integration:**
+
+ChirpStack provides a built-in AWS IoT Core integration that:
+
+1. Creates/updates AWS IoT Things automatically
+2. Publishes uplink data to configured MQTT topics
+3. Authenticates using X.509 certificates
+4. Supports per-application topic configuration
+
+**Configuration Summary:**
+
+1. Deploy ChirpStack (self-hosted or managed)
+2. Configure Milesight UG65 as packet forwarder to ChirpStack
+3. Create application for SMDH tenant
+4. Register DevTank OSM devices with DevEUI and AppKey
+5. Configure JavaScript payload decoder
+6. Enable AWS IoT Core integration:
+   - AWS Region: `eu-west-2`
+   - IoT Core Endpoint: `{account}-ats.iot.eu-west-2.amazonaws.com`
+   - Upload X.509 certificate and private key
+   - Topic template: `smdh/{tenant_id}/sensor-data`
+
+**Advantages:**
+
+- Centralised management of all devices and gateways
+- Single configuration point for payload decoders
+- Better visibility across multi-site deployments
+- Suitable for 30+ tenants with multiple sites each
+- Active open-source community
+
+**Limitations:**
+
+- Requires additional infrastructure (VM or container)
+- More complex initial setup
+- Operational overhead for self-hosted deployments
+
+### D.5 Options Not Recommended
+
+| Network Server | Reason Not Recommended |
+|----------------|------------------------|
+| **The Things Network (TTN)** | No direct AWS IoT Core integration; requires webhook bridge or MQTT subscription from AWS side |
+| **Helium** | Decentralised coverage model; no native AWS IoT integration; coverage dependent on community hotspots |
+
+### D.6 Decision Matrix
+
+| Criterion | Milesight Built-in NS | ChirpStack |
+|-----------|----------------------|------------|
+| **Setup Complexity** | Low | Medium |
+| **AWS IoT Integration** | Native MQTT | Native MQTT |
+| **X.509 Support** | ✅ Yes | ✅ Yes |
+| **Central Management** | ❌ Per-gateway | ✅ Yes |
+| **Multi-site Visibility** | ❌ Limited | ✅ Yes |
+| **Infrastructure Required** | Gateway only | Server/container |
+| **Best For** | 1-3 sites, <30 sensors | 3+ sites, 30+ sensors |
+
+### D.7 Recommendation
+
+**For initial SMDH deployments:** Start with **Milesight UG65 built-in Network Server**. This provides the fastest path to production with minimal infrastructure.
+
+**For scaled deployments:** Migrate to **ChirpStack** when:
+- Managing more than 3 sites per tenant
+- Requiring centralised device visibility
+- Needing automated device provisioning via API
+- Operating 30+ sensors across multiple locations
+
+Both options satisfy the core SMDH requirement: authenticated MQTT publishing to AWS IoT Core using X.509 certificates, with the gateway (not the sensor) holding the credentials.

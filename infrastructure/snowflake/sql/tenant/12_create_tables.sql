@@ -13,8 +13,14 @@
 -- - ANALYTICS schema: dashboard views and KPI tables
 -- ============================================================================
 
+-- Enable SnowSQL variable substitution 
+!set variable_substitution=true
+
 USE ROLE ACCOUNTADMIN;
 USE WAREHOUSE SMDH_WH;
+
+-- Convert SnowSQL substitution variables to session variables
+SET tenant_id = '&tenant_id';
 
 -- Display banner
 SELECT '╔════════════════════════════════════════════════════════════════╗' AS banner
@@ -44,7 +50,7 @@ USE SCHEMA raw;
 CREATE TABLE IF NOT EXISTS sensor_readings (
     -- Primary identifiers
     reading_id VARCHAR(255) DEFAULT UUID_STRING(),
-    tenant_id VARCHAR(100) NOT NULL DEFAULT $tenant_id,
+    tenant_id VARCHAR(100) NOT NULL,  -- Set by ingestion pipeline, not DEFAULT (session vars not allowed)
     sensor_id VARCHAR(255) NOT NULL,
     site_id VARCHAR(100),
     device_id VARCHAR(255),
@@ -88,7 +94,7 @@ SELECT '3. Creating RAW.GATEWAY_CONNECTIONS Table...' AS step;
 CREATE TABLE IF NOT EXISTS gateway_connections (
     -- Primary identifiers
     connection_id VARCHAR(255) DEFAULT UUID_STRING(),
-    tenant_id VARCHAR(100) NOT NULL DEFAULT $tenant_id,
+    tenant_id VARCHAR(100) NOT NULL,  -- Set by ingestion pipeline, not DEFAULT (session vars not allowed)
     gateway_id VARCHAR(255) NOT NULL,
     site_id VARCHAR(100),
 
@@ -131,7 +137,7 @@ SELECT '4. Creating RAW.DEVICE_STATUS Table...' AS step;
 CREATE TABLE IF NOT EXISTS device_status (
     -- Primary identifiers
     event_id VARCHAR(255) DEFAULT UUID_STRING(),
-    tenant_id VARCHAR(100) NOT NULL DEFAULT $tenant_id,
+    tenant_id VARCHAR(100) NOT NULL,  -- Set by ingestion pipeline, not DEFAULT (session vars not allowed)
     device_id VARCHAR(255) NOT NULL,
     site_id VARCHAR(100),
 
@@ -171,7 +177,7 @@ SELECT '5. Creating RAW.UPLOADED_FILES Table...' AS step;
 CREATE TABLE IF NOT EXISTS uploaded_files (
     -- Primary identifiers
     file_id VARCHAR(255) PRIMARY KEY DEFAULT UUID_STRING(),
-    tenant_id VARCHAR(100) NOT NULL DEFAULT $tenant_id,
+    tenant_id VARCHAR(100) NOT NULL,  -- Set by ingestion pipeline, not DEFAULT (session vars not allowed)
 
     -- File details
     file_name VARCHAR(500),
@@ -214,7 +220,7 @@ USE SCHEMA normalized;
 CREATE TABLE IF NOT EXISTS sensor_metrics (
     -- Primary identifiers
     metric_id VARCHAR(255) DEFAULT UUID_STRING(),
-    tenant_id VARCHAR(100) NOT NULL DEFAULT $tenant_id,
+    tenant_id VARCHAR(100) NOT NULL,  -- Set by ingestion pipeline, not DEFAULT (session vars not allowed)
     sensor_id VARCHAR(255) NOT NULL,
     site_id VARCHAR(100),
     device_id VARCHAR(255),
@@ -262,7 +268,7 @@ SELECT '7. Creating NORMALIZED.DEVICE_EVENTS Table...' AS step;
 CREATE TABLE IF NOT EXISTS device_events (
     -- Primary identifiers
     event_id VARCHAR(255) DEFAULT UUID_STRING(),
-    tenant_id VARCHAR(100) NOT NULL DEFAULT $tenant_id,
+    tenant_id VARCHAR(100) NOT NULL,  -- Set by ingestion pipeline, not DEFAULT (session vars not allowed)
     device_id VARCHAR(255) NOT NULL,
     site_id VARCHAR(100),
 
@@ -304,7 +310,7 @@ SELECT '8. Creating NORMALIZED.SITE_METRICS Table...' AS step;
 CREATE TABLE IF NOT EXISTS site_metrics (
     -- Primary identifiers
     metric_id VARCHAR(255) DEFAULT UUID_STRING(),
-    tenant_id VARCHAR(100) NOT NULL DEFAULT $tenant_id,
+    tenant_id VARCHAR(100) NOT NULL,  -- Set by ingestion pipeline, not DEFAULT (session vars not allowed)
     site_id VARCHAR(100) NOT NULL,
 
     -- Timestamp
@@ -348,7 +354,7 @@ USE SCHEMA aggregated;
 
 CREATE TABLE IF NOT EXISTS sensor_metrics_hourly (
     -- Primary identifiers
-    tenant_id VARCHAR(100) NOT NULL DEFAULT $tenant_id,
+    tenant_id VARCHAR(100) NOT NULL,  -- Set by ingestion pipeline, not DEFAULT (session vars not allowed)
     sensor_id VARCHAR(255) NOT NULL,
     site_id VARCHAR(100),
     metric_name VARCHAR(255) NOT NULL,
@@ -379,8 +385,8 @@ CREATE TABLE IF NOT EXISTS sensor_metrics_hourly (
     -- Tenant isolation enforced at application layer
 )
 CLUSTER BY (DATE_TRUNC('day', hour_timestamp), sensor_id)
-DATA_RETENTION_TIME_IN_DAYS = 365
-COMMENT = 'Hourly aggregated sensor metrics. Pre-computed statistics for dashboard performance. Retained for 1 year.';
+DATA_RETENTION_TIME_IN_DAYS = 90
+COMMENT = 'Hourly aggregated sensor metrics. Pre-computed statistics for dashboard performance. Retained for 90 days (Standard edition limit).';
 
 SELECT 'Created table: AGGREGATED.SENSOR_METRICS_HOURLY' AS result;
 
@@ -392,7 +398,7 @@ SELECT '10. Creating AGGREGATED.SENSOR_METRICS_DAILY Table...' AS step;
 
 CREATE TABLE IF NOT EXISTS sensor_metrics_daily (
     -- Primary identifiers
-    tenant_id VARCHAR(100) NOT NULL DEFAULT $tenant_id,
+    tenant_id VARCHAR(100) NOT NULL,  -- Set by ingestion pipeline, not DEFAULT (session vars not allowed)
     sensor_id VARCHAR(255) NOT NULL,
     site_id VARCHAR(100),
     metric_name VARCHAR(255) NOT NULL,
@@ -429,8 +435,8 @@ CREATE TABLE IF NOT EXISTS sensor_metrics_daily (
     -- Tenant isolation enforced at application layer
 )
 CLUSTER BY (day_date, sensor_id)
-DATA_RETENTION_TIME_IN_DAYS = 730
-COMMENT = 'Daily aggregated sensor metrics. Historical trends and reporting. Retained for 2 years.';
+DATA_RETENTION_TIME_IN_DAYS = 90
+COMMENT = 'Daily aggregated sensor metrics. Historical trends and reporting. Retained for 90 days (Standard edition limit).';
 
 SELECT 'Created table: AGGREGATED.SENSOR_METRICS_DAILY' AS result;
 
@@ -442,7 +448,7 @@ SELECT '11. Creating AGGREGATED.SITE_PERFORMANCE_DAILY Table...' AS step;
 
 CREATE TABLE IF NOT EXISTS site_performance_daily (
     -- Primary identifiers
-    tenant_id VARCHAR(100) NOT NULL DEFAULT $tenant_id,
+    tenant_id VARCHAR(100) NOT NULL,  -- Set by ingestion pipeline, not DEFAULT (session vars not allowed)
     site_id VARCHAR(100) NOT NULL,
     day_date DATE NOT NULL,
 
@@ -473,8 +479,8 @@ CREATE TABLE IF NOT EXISTS site_performance_daily (
     -- Tenant isolation enforced at application layer
 )
 CLUSTER BY (day_date)
-DATA_RETENTION_TIME_IN_DAYS = 730
-COMMENT = 'Daily site operational performance metrics. KPIs for site health monitoring.';
+DATA_RETENTION_TIME_IN_DAYS = 90
+COMMENT = 'Daily site operational performance metrics. KPIs for site health monitoring. Retained for 90 days (Standard edition limit).';
 
 SELECT 'Created table: AGGREGATED.SITE_PERFORMANCE_DAILY' AS result;
 
@@ -486,20 +492,32 @@ SELECT '12. Creating ANALYTICS Views...' AS step;
 
 USE SCHEMA analytics;
 
+-- Sensor status view based on local raw data (no external dependencies)
 CREATE OR REPLACE VIEW v_current_sensor_status AS
 WITH latest_readings AS (
     SELECT
         sensor_id,
         site_id,
+        device_id,
         MAX(timestamp) AS last_reading_time
-    FROM smdh_tenant_${tenant_id}.raw.sensor_readings
+    FROM raw.sensor_readings
     WHERE timestamp >= DATEADD(day, -1, CURRENT_TIMESTAMP())
-    GROUP BY sensor_id, site_id
+    GROUP BY sensor_id, site_id, device_id
+),
+latest_device_status AS (
+    SELECT
+        device_id,
+        firmware_version,
+        status AS device_status,
+        MAX(timestamp) AS last_status_time
+    FROM raw.device_status
+    WHERE timestamp >= DATEADD(day, -7, CURRENT_TIMESTAMP())
+    GROUP BY device_id, firmware_version, status
 )
 SELECT
-    d.device_id,
-    d.device_name,
-    d.site_id,
+    lr.sensor_id,
+    lr.device_id,
+    lr.site_id,
     lr.last_reading_time,
     DATEDIFF(minute, lr.last_reading_time, CURRENT_TIMESTAMP()) AS minutes_since_last_reading,
     CASE
@@ -508,38 +526,16 @@ SELECT
         WHEN DATEDIFF(minute, lr.last_reading_time, CURRENT_TIMESTAMP()) <= 60 THEN 'Warning'
         ELSE 'Offline'
     END AS status,
-    d.last_connection,
-    d.firmware_version
-FROM smdh_infrastructure.tenant_configs.devices d
-LEFT JOIN latest_readings lr ON d.device_id = lr.sensor_id
-WHERE d.tenant_id = $tenant_id
+    lds.last_status_time AS last_device_status_time,
+    lds.firmware_version
+FROM latest_readings lr
+LEFT JOIN latest_device_status lds ON lr.device_id = lds.device_id
 ORDER BY status DESC, minutes_since_last_reading DESC;
 
 SELECT 'Created view: ANALYTICS.V_CURRENT_SENSOR_STATUS' AS result;
 
--- ============================================================================
--- 13. Set Table Comments and Tags
--- ============================================================================
-
-SELECT '13. Documenting Tables...' AS step;
-
--- Update schema_documentation table
-USE SCHEMA analytics;
-
-INSERT INTO schema_documentation (schema_name, object_type, object_name, description) VALUES
-    ('RAW', 'TABLE', 'sensor_readings', 'Raw MQTT sensor data with original payload'),
-    ('RAW', 'TABLE', 'gateway_connections', 'Gateway connection lifecycle tracking'),
-    ('RAW', 'TABLE', 'device_status', 'Device health and status events'),
-    ('RAW', 'TABLE', 'uploaded_files', 'Manual file upload tracking'),
-    ('NORMALIZED', 'TABLE', 'sensor_metrics', 'Validated and flattened sensor metrics'),
-    ('NORMALIZED', 'TABLE', 'device_events', 'Normalized device events for alerting'),
-    ('NORMALIZED', 'TABLE', 'site_metrics', 'Site-level aggregated metrics'),
-    ('AGGREGATED', 'TABLE', 'sensor_metrics_hourly', 'Hourly sensor metric aggregates'),
-    ('AGGREGATED', 'TABLE', 'sensor_metrics_daily', 'Daily sensor metric aggregates'),
-    ('AGGREGATED', 'TABLE', 'site_performance_daily', 'Daily site performance KPIs'),
-    ('ANALYTICS', 'VIEW', 'v_current_sensor_status', 'Real-time sensor connectivity status');
-
-SELECT 'Updated schema documentation' AS result;
+-- Note: schema_documentation table is created in 17_create_monitoring.sql
+-- Documentation will be added there instead
 
 -- ============================================================================
 -- 14. Verification
@@ -561,8 +557,8 @@ USE SCHEMA analytics;
 SHOW TABLES;
 SHOW VIEWS;
 
--- Query table sizes
-SELECT * FROM analytics.v_tenant_objects;
+-- Note: v_tenant_objects view is created in 17_create_monitoring.sql
+-- Table size query will be available after monitoring setup
 
 -- ============================================================================
 -- 15. Summary
@@ -575,23 +571,23 @@ UNION ALL SELECT ''
 UNION ALL SELECT 'Created Tables by Schema:'
 UNION ALL SELECT ''
 UNION ALL SELECT 'RAW Schema (Data Ingestion):'
-UNION ALL SELECT '  ✓ sensor_readings (7-day retention)'
-UNION ALL SELECT '  ✓ gateway_connections (7-day retention)'
-UNION ALL SELECT '  ✓ device_status (7-day retention)'
-UNION ALL SELECT '  ✓ uploaded_files (7-day retention)'
+UNION ALL SELECT '  [OK] sensor_readings (7-day retention)'
+UNION ALL SELECT '  [OK] gateway_connections (7-day retention)'
+UNION ALL SELECT '  [OK] device_status (7-day retention)'
+UNION ALL SELECT '  [OK] uploaded_files (7-day retention)'
 UNION ALL SELECT ''
 UNION ALL SELECT 'NORMALIZED Schema (Validated Data):'
-UNION ALL SELECT '  ✓ sensor_metrics (7-day retention)'
-UNION ALL SELECT '  ✓ device_events (30-day retention)'
-UNION ALL SELECT '  ✓ site_metrics (30-day retention)'
+UNION ALL SELECT '  [OK] sensor_metrics (7-day retention)'
+UNION ALL SELECT '  [OK] device_events (30-day retention)'
+UNION ALL SELECT '  [OK] site_metrics (30-day retention)'
 UNION ALL SELECT ''
 UNION ALL SELECT 'AGGREGATED Schema (Pre-computed Metrics):'
-UNION ALL SELECT '  ✓ sensor_metrics_hourly (365-day retention)'
-UNION ALL SELECT '  ✓ sensor_metrics_daily (730-day retention)'
-UNION ALL SELECT '  ✓ site_performance_daily (730-day retention)'
+UNION ALL SELECT '  [OK] sensor_metrics_hourly (90-day retention)'
+UNION ALL SELECT '  [OK] sensor_metrics_daily (90-day retention)'
+UNION ALL SELECT '  [OK] site_performance_daily (90-day retention)'
 UNION ALL SELECT ''
 UNION ALL SELECT 'ANALYTICS Schema (Views):'
-UNION ALL SELECT '  ✓ v_current_sensor_status'
+UNION ALL SELECT '  [OK] v_current_sensor_status'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Features:'
 UNION ALL SELECT '  • All tables clustered for query performance'

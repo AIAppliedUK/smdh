@@ -41,7 +41,7 @@ case "$ENVIRONMENT" in
     ENVIRONMENT="dev"
     AWS_ROLE_NAME="smdh-snowflake-kinesis-role-dev"
     SNOWFLAKE_DATABASE="SMDH_TENANT_TEST_TENANT"
-    SNOWFLAKE_WAREHOUSE="COMPUTE_WH"
+    SNOWFLAKE_WAREHOUSE="SMDH_WH"
     INTEGRATION_NAME="smdh_kinesis_integration_dev"
     PIPE_NAME="kinesis_to_sensor_readings_dev"
     ;;
@@ -87,7 +87,7 @@ check_prerequisites() {
     exit 1
   fi
 
-  echo -e "${GREEN}✓ All prerequisites met${NC}"
+  echo -e "${GREEN}[OK] All prerequisites met${NC}"
 }
 
 # Step 1: Create Snowflake Storage Integration
@@ -113,7 +113,7 @@ CREATE OR REPLACE STORAGE INTEGRATION $INTEGRATION_NAME
 DESC STORAGE INTEGRATION $INTEGRATION_NAME;
 EOF
 
-  echo -e "${GREEN}✓ Storage integration created${NC}"
+  echo -e "${GREEN}[OK] Storage integration created${NC}"
 }
 
 # Step 2: Get Snowflake IAM User details
@@ -150,7 +150,7 @@ EOF
     return 1
   fi
 
-  echo -e "${GREEN}✓ Retrieved Snowflake IAM details:${NC}"
+  echo -e "${GREEN}[OK] Retrieved Snowflake IAM details:${NC}"
   echo "  IAM User ARN: $SNOWFLAKE_IAM_USER_ARN"
   echo "  External ID: $SNOWFLAKE_EXTERNAL_ID"
 
@@ -197,7 +197,7 @@ EOF
     --role-name "$AWS_ROLE_NAME" \
     --policy-document file:///tmp/trust_policy_${ENVIRONMENT}.json
 
-  echo -e "${GREEN}✓ AWS IAM role trust policy updated${NC}"
+  echo -e "${GREEN}[OK] AWS IAM role trust policy updated${NC}"
 }
 
 # Step 4: Create Snowflake Pipe for Data Ingestion
@@ -213,13 +213,23 @@ USE WAREHOUSE $SNOWFLAKE_WAREHOUSE;
 CREATE PIPE IF NOT EXISTS raw.$PIPE_NAME
   AUTO_INGEST = TRUE
   AS
-  COPY INTO raw.clamp_sensor_readings (
-    reading_id, tenant_id, machine_id, sensor_id, timestamp,
-    current_phase_a, current_phase_b, current_phase_c, current_rms,
-    voltage_phase_a, voltage_phase_b, voltage_phase_c,
-    power_factor, frequency, raw_payload
+  COPY INTO raw.sensor_readings (
+    tenant_id, sensor_id, site_id, device_id, timestamp,
+    payload, source_system, mqtt_topic, message_id
   )
-  FROM '@$INTEGRATION_NAME/$KINESIS_STREAM_NAME'
+  FROM (
+    SELECT
+      \$1:tenant_id::VARCHAR,
+      \$1:sensor_id::VARCHAR,
+      \$1:site_id::VARCHAR,
+      \$1:device_id::VARCHAR,
+      \$1:timestamp::TIMESTAMP_NTZ,
+      \$1::VARIANT,
+      'mqtt'::VARCHAR,
+      \$1:mqtt_topic::VARCHAR,
+      \$1:message_id::VARCHAR
+    FROM '@$INTEGRATION_NAME/$KINESIS_STREAM_NAME'
+  )
   FILE_FORMAT = (TYPE = 'JSON', COMPRESSION = 'AUTO')
   ON_ERROR = 'CONTINUE';
 
@@ -227,7 +237,7 @@ CREATE PIPE IF NOT EXISTS raw.$PIPE_NAME
 SHOW PIPES IN raw;
 EOF
 
-  echo -e "${GREEN}✓ Snowflake pipe created${NC}"
+  echo -e "${GREEN}[OK] Snowflake pipe created${NC}"
 }
 
 # Step 5: Verify Kinesis Stream Access
@@ -244,7 +254,7 @@ verify_kinesis_access() {
     STREAM_STATUS=$(echo "$STREAM_INFO" | jq -r '.StreamDescription.StreamStatus')
     SHARD_COUNT=$(echo "$STREAM_INFO" | jq '.StreamDescription.Shards | length')
 
-    echo -e "${GREEN}✓ Kinesis stream accessible${NC}"
+    echo -e "${GREEN}[OK] Kinesis stream accessible${NC}"
     echo "  Stream: $KINESIS_STREAM_NAME"
     echo "  Status: $STREAM_STATUS"
     echo "  Shards: $SHARD_COUNT"
@@ -266,7 +276,7 @@ USE DATABASE $SNOWFLAKE_DATABASE;
 SELECT CURRENT_TIMESTAMP() AS connection_test;
 EOF
 
-  echo -e "${GREEN}✓ Connection test successful${NC}"
+  echo -e "${GREEN}[OK] Connection test successful${NC}"
 }
 
 # Step 7: Display Summary
@@ -289,12 +299,12 @@ display_summary() {
   echo "  Kinesis Stream:      $KINESIS_STREAM_NAME"
   echo ""
   echo "Data Flow:"
-  echo "  AWS IoT Core → Kinesis Stream → Snowflake Pipe → $SNOWFLAKE_DATABASE.raw.clamp_sensor_readings"
+  echo "  AWS IoT Core → Kinesis Stream → Snowflake Pipe → $SNOWFLAKE_DATABASE.raw.sensor_readings"
   echo ""
   echo "Next Steps:"
   echo "  1. Verify data is flowing from IoT Core to Kinesis"
   echo "  2. Monitor pipe status: SHOW PIPES IN raw;"
-  echo "  3. Check ingestion progress: SELECT COUNT(*) FROM raw.clamp_sensor_readings;"
+  echo "  3. Check ingestion progress: SELECT COUNT(*) FROM raw.sensor_readings;"
   echo ""
   echo "Useful Commands:"
   echo "  # Check pipe status"
@@ -307,7 +317,7 @@ display_summary() {
   echo "  # Monitor data ingestion"
   echo "  snowsql -a $SNOWFLAKE_ACCOUNT -u $SNOWFLAKE_USER << 'SQL'"
   echo "  USE DATABASE $SNOWFLAKE_DATABASE;"
-  echo "  SELECT COUNT(*) as record_count FROM raw.clamp_sensor_readings;"
+  echo "  SELECT COUNT(*) as record_count FROM raw.sensor_readings;"
   echo "  SQL"
   echo ""
 }
@@ -349,7 +359,7 @@ main() {
   display_summary
   cleanup
 
-  echo -e "${GREEN}✓ Setup completed successfully!${NC}"
+  echo -e "${GREEN}[OK] Setup completed successfully!${NC}"
 }
 
 # Run main function

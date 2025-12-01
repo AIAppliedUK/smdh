@@ -120,16 +120,22 @@ module "tenants" {
   source   = "./modules/tenant"
   for_each = var.tenants
 
-  tenant_id               = each.key
-  tenant_name             = each.value.name
-  num_sites               = each.value.num_sites
-  aws_region              = var.aws_region
-  aws_account_id          = data.aws_caller_identity.current.account_id
-  lorawan_thing_type_name = module.iot_core.lorawan_thing_type_name
-  iot_kinesis_role_arn    = module.iot_core.iot_kinesis_role_arn
-  kinesis_stream_name     = module.kinesis.stream_name
-  contact_email           = try(each.value.contact_email, "")
-  enable_monitoring       = var.enable_monitoring
+  tenant_id                      = each.key
+  tenant_name                    = each.value.name
+  num_sites                      = each.value.num_sites
+  aws_region                     = var.aws_region
+  aws_account_id                 = data.aws_caller_identity.current.account_id
+  lorawan_thing_type_name        = module.iot_core.lorawan_thing_type_name
+  network_server_thing_type_name = module.iot_core.network_server_thing_type_name
+  iot_kinesis_role_arn           = module.iot_core.iot_kinesis_role_arn
+  kinesis_stream_name            = module.kinesis.stream_name
+  contact_email                  = try(each.value.contact_email, "")
+  enable_monitoring              = var.enable_monitoring
+
+  # Deployment mode: "gateway" (default) for Milesight UG65 with built-in NS
+  #                  "network_server" for ChirpStack or similar centralized NS
+  deployment_mode     = try(each.value.deployment_mode, "gateway")
+  network_server_name = try(each.value.network_server_name, "chirpstack")
 
   tags = merge(
     local.common_tags,
@@ -138,6 +144,7 @@ module "tenants" {
       TenantId           = each.key
       TenantName         = each.value.name
       NumSites           = each.value.num_sites
+      DeploymentMode     = try(each.value.deployment_mode, "gateway")
       Service            = "Multi-Tenant-IoT"
       BillingTenant      = each.key
       ContactEmail       = try(each.value.contact_email, "")

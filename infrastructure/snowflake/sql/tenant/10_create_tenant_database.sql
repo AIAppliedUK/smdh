@@ -16,8 +16,20 @@
 -- - Registers tenant in infrastructure database
 -- ============================================================================
 
+-- Enable SnowSQL variable substitution
+!set variable_substitution=true
+
 USE ROLE ACCOUNTADMIN;
 USE WAREHOUSE SMDH_WH;
+
+-- ============================================================================
+-- Convert SnowSQL substitution variables to session variables
+-- This bridges --variable flags to Snowflake session variables
+-- ============================================================================
+SET tenant_id = '&tenant_id';
+SET tenant_name = '&tenant_name';
+SET aws_region = '&aws_region';
+SET num_sites = &num_sites;
 
 -- Display banner
 SELECT '╔════════════════════════════════════════════════════════════════╗' AS banner
@@ -40,7 +52,7 @@ SELECT 'Number of Sites: ' || $num_sites AS parameter;
 SELECT
     CASE
         WHEN $tenant_id REGEXP '^[a-z0-9_]+$'
-        THEN '✓ Tenant ID format is valid'
+        THEN '[OK] Tenant ID format is valid'
         ELSE '✗ ERROR: Tenant ID must be lowercase alphanumeric with underscores only'
     END AS validation;
 
@@ -52,7 +64,7 @@ SELECT
             WHERE tenant_id = $tenant_id
         )
         THEN '⚠ WARNING: Tenant ' || $tenant_id || ' already exists. This will update configuration.'
-        ELSE '✓ New tenant will be created'
+        ELSE '[OK] New tenant will be created'
     END AS tenant_check;
 
 -- ============================================================================
@@ -66,7 +78,7 @@ SET database_name = 'smdh_tenant_' || $tenant_id;
 -- Create database with Time Travel enabled
 CREATE DATABASE IF NOT EXISTS IDENTIFIER($database_name)
     DATA_RETENTION_TIME_IN_DAYS = 7  -- 7 days Time Travel for recovery
-    COMMENT = 'SMDH Tenant Database for ' || $tenant_name || '. Isolated database per tenant for complete data separation.';
+    COMMENT = 'SMDH Tenant Database. Isolated database per tenant for complete data separation.';
 
 SELECT 'Created database: ' || $database_name AS result;
 
@@ -210,18 +222,18 @@ SELECT '7. Creating Tenant-Specific Roles...' AS step;
 USE ROLE ACCOUNTADMIN;
 
 -- Admin role for tenant (full access to tenant database)
-SET admin_role_name = 'smdh_tenant_' || '&tenant_id' || '_admin';
-SET user_role_name = 'smdh_tenant_' || '&tenant_id' || '_user';
-SET readonly_role_name = 'smdh_tenant_' || '&tenant_id' || '_readonly';
+SET admin_role_name = 'smdh_tenant_' || $tenant_id || '_admin';
+SET user_role_name = 'smdh_tenant_' || $tenant_id || '_user';
+SET readonly_role_name = 'smdh_tenant_' || $tenant_id || '_readonly';
 
 CREATE ROLE IF NOT EXISTS IDENTIFIER($admin_role_name)
-    COMMENT = 'Admin role for tenant &tenant_name. Full access to tenant database and objects.';
+    COMMENT = 'Admin role for tenant. Full access to tenant database and objects.';
 
 CREATE ROLE IF NOT EXISTS IDENTIFIER($user_role_name)
-    COMMENT = 'Standard user role for tenant &tenant_name. Read/write access to analytics objects.';
+    COMMENT = 'Standard user role for tenant. Read/write access to analytics objects.';
 
 CREATE ROLE IF NOT EXISTS IDENTIFIER($readonly_role_name)
-    COMMENT = 'Read-only role for tenant &tenant_name. View access for reporting and dashboards.';
+    COMMENT = 'Read-only role for tenant. View access for reporting and dashboards.';
 
 -- Inherit from base analytics role
 GRANT ROLE smdh_analytics_user TO ROLE IDENTIFIER($admin_role_name);
@@ -283,8 +295,9 @@ USE DATABASE IDENTIFIER($database_name);
 USE SCHEMA analytics;
 
 -- Tenant configuration metadata table
+-- Note: tenant_id column has no DEFAULT because session variables cannot be used in DEFAULT clauses
 CREATE OR REPLACE TABLE tenant_metadata (
-    tenant_id VARCHAR(100) DEFAULT $tenant_id,
+    tenant_id VARCHAR(100) NOT NULL,
     metadata_key VARCHAR(255) NOT NULL,
     metadata_value VARIANT,
     description VARCHAR(1000),
@@ -295,14 +308,14 @@ CREATE OR REPLACE TABLE tenant_metadata (
 )
 COMMENT = 'Tenant-specific configuration and metadata key-value store';
 
--- Insert initial metadata
-INSERT INTO tenant_metadata (metadata_key, metadata_value, description) VALUES
-    ('tenant_id', TO_VARIANT($tenant_id), 'Tenant identifier'),
-    ('tenant_name', TO_VARIANT($tenant_name), 'Tenant display name'),
-    ('aws_region', TO_VARIANT($aws_region), 'AWS region for IoT Core and Kinesis'),
-    ('num_sites', TO_VARIANT($num_sites), 'Number of manufacturing sites'),
-    ('database_created', TO_VARIANT(CURRENT_TIMESTAMP()), 'Database creation timestamp'),
-    ('schema_version', TO_VARIANT('1.0'), 'Database schema version');
+-- Insert initial metadata (using INSERT...SELECT to support session variables with TO_VARIANT)
+INSERT INTO tenant_metadata (tenant_id, metadata_key, metadata_value, description)
+SELECT $tenant_id, 'tenant_id', TO_VARIANT($tenant_id), 'Tenant identifier'
+UNION ALL SELECT $tenant_id, 'tenant_name', TO_VARIANT($tenant_name), 'Tenant display name'
+UNION ALL SELECT $tenant_id, 'aws_region', TO_VARIANT($aws_region), 'AWS region for IoT Core and Kinesis'
+UNION ALL SELECT $tenant_id, 'num_sites', TO_VARIANT($num_sites), 'Number of manufacturing sites'
+UNION ALL SELECT $tenant_id, 'database_created', TO_VARIANT(CURRENT_TIMESTAMP()), 'Database creation timestamp'
+UNION ALL SELECT $tenant_id, 'schema_version', TO_VARIANT('1.0'), 'Database schema version';
 
 SELECT 'Created tenant metadata table with initial configuration' AS result;
 
@@ -320,7 +333,7 @@ USE DATABASE IDENTIFIER($database_name);
 SHOW SCHEMAS;
 
 -- Verify roles
-SHOW ROLES LIKE 'smdh_tenant_' || '&tenant_id' || '%';
+SHOW ROLES LIKE 'smdh_tenant_%';
 
 -- Verify file formats
 USE SCHEMA raw;
@@ -357,12 +370,12 @@ UNION ALL SELECT '  • AWS Region: ' || $aws_region
 UNION ALL SELECT '  • Number of Sites: ' || $num_sites
 UNION ALL SELECT ''
 UNION ALL SELECT 'Created Resources:'
-UNION ALL SELECT '  ✓ Database: smdh_tenant_' || $tenant_id
-UNION ALL SELECT '  ✓ Schemas: raw, normalized, aggregated, analytics'
-UNION ALL SELECT '  ✓ File Formats: ff_json, ff_csv, ff_parquet'
-UNION ALL SELECT '  ✓ Stages: stage_uploads, stage_errors'
-UNION ALL SELECT '  ✓ Roles: _admin, _user, _readonly'
-UNION ALL SELECT '  ✓ Metadata: tenant_metadata table'
+UNION ALL SELECT '  [OK] Database: smdh_tenant_' || $tenant_id
+UNION ALL SELECT '  [OK] Schemas: raw, normalized, aggregated, analytics'
+UNION ALL SELECT '  [OK] File Formats: ff_json, ff_csv, ff_parquet'
+UNION ALL SELECT '  [OK] Stages: stage_uploads, stage_errors'
+UNION ALL SELECT '  [OK] Roles: _admin, _user, _readonly'
+UNION ALL SELECT '  [OK] Metadata: tenant_metadata table'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Next Steps:'
 UNION ALL SELECT '  1. Run 11_create_schemas.sql (if not auto-included)'

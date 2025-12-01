@@ -30,6 +30,16 @@ output "devtank_thing_type_arn" {
   value       = aws_iot_thing_type.devtank_osm.arn
 }
 
+output "network_server_thing_type_name" {
+  description = "Name of the Network Server thing type (ChirpStack or similar)"
+  value       = aws_iot_thing_type.network_server.name
+}
+
+output "network_server_thing_type_arn" {
+  description = "ARN of the Network Server thing type"
+  value       = aws_iot_thing_type.network_server.arn
+}
+
 output "air_quality_thing_type_name" {
   description = "Name of the Air Quality Sensor thing type"
   value       = aws_iot_thing_type.air_quality_sensor.name
