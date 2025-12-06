@@ -2,7 +2,7 @@
 
 Complete step-by-step guide to deploy SMDH from scratch.
 
-**Last Updated:** December 1, 2025
+**Last Updated:** December 3, 2025
 **Estimated Deployment Time:** 1-2 hours (first time), 30 minutes (subsequent deployments)
 
 ---
@@ -284,9 +284,83 @@ cd infrastructure/snowflake
 - [ ] Setup script completed without errors
 - [ ] Validation report shows all objects created
 
-### Step 2.4: Configure Openflow Trust Relationship
+### Step 2.4: Create Openflow Deployment (Snowsight UI - One Time)
 
-After Step 2.3, Snowflake output will show:
+**Note:** Openflow Deployments and Runtimes cannot be created via SQL - this requires the Snowsight UI.
+
+1. Open **Snowsight** → **Ingestion** → **Openflow**
+2. Click **+ Create deployment**
+3. Complete the wizard:
+   - **Prerequisites**: Click Next
+   - **Deployment location**: Select your region, click Next
+   - **Configuration**:
+     - **Name**: `smdh-openflow-deployment`
+     - **Usage roles**: `OPENFLOW_ADMIN`
+     - **Operate roles**: `OPENFLOW_ADMIN`, `OPENFLOW_RUNTIME_ROLE_KINESIS`
+     - **Monitor roles**: `OPENFLOW_ADMIN`, `OPENFLOW_RUNTIME_ROLE_KINESIS`
+4. Click **Create deployment**
+5. **Wait 15-20 minutes** for deployment to become Active
+
+- [ ] Deployment `smdh-openflow-deployment` created
+- [ ] Deployment status: **Active** (wait 15-20 min)
+
+### Step 2.5: Create Openflow Runtime (Snowsight UI - One Time)
+
+1. In Snowsight → **Ingestion** → **Openflow** → **Runtimes** tab
+2. Click **+ Create runtime**
+3. Configure:
+   - **Name**: `smdh-kinesis-runtime`
+   - **Deployment**: `smdh-openflow-deployment`
+   - **Role**: `OPENFLOW_RUNTIME_ROLE_KINESIS`
+   - **Warehouse**: `SMDH_WH`
+   - **External Access Integration**: `OPENFLOW_AWS_EAI`
+4. Click **Create**
+5. **Wait 5-10 minutes** for runtime to become Active
+
+- [ ] Runtime `smdh-kinesis-runtime` created
+- [ ] Runtime status: **Active** (wait 5-10 min)
+
+### Step 2.6: Add Kinesis Connector (Snowsight UI - Per Tenant)
+
+For each tenant, add a Kinesis connector:
+
+1. In Snowsight → **Ingestion** → **Openflow** → **Runtimes**
+2. Click on `smdh-kinesis-runtime`
+3. Click **Add Connector** → **Amazon Kinesis**
+4. Configure **Source**:
+
+   | Field | Value |
+   |-------|-------|
+   | AWS Region | `eu-west-2` |
+   | AWS Access Key ID | *(your AWS access key)* |
+   | AWS Secret Access Key | *(your AWS secret key)* |
+   | Stream Name | `smdh-test_tenant-stream` |
+   | Application Name | `smdh-openflow-test_tenant` |
+   | Initial Position | `LATEST` |
+   | Message Format | `JSON` |
+
+5. Configure **Destination**:
+
+   | Field | Value |
+   |-------|-------|
+   | Database | `SMDH_TENANT_TEST_TENANT` |
+   | Schema | `RAW` |
+   | Role | `OPENFLOW_RUNTIME_ROLE_KINESIS` |
+   | Warehouse | `SMDH_WH` |
+
+6. Configure **Stream-to-Table Mapping**:
+   ```
+   smdh-test_tenant-stream:SENSOR_READINGS
+   ```
+
+7. Click **Create** → **Start**
+
+- [ ] Kinesis connector created for test_tenant
+- [ ] Connector status: **Running**
+
+### Step 2.7: Configure Openflow Trust Relationship
+
+After running the setup scripts (Step 2.3), Snowflake output will show:
 
 ```
 STORAGE_AWS_IAM_USER_ARN: arn:aws:iam::...user/...
@@ -334,7 +408,7 @@ Create file: `trust-policy.json`
 - [ ] AWS trust policy updated
 - [ ] Snowflake can assume AWS role
 
-### Step 2.5: Verify Snowflake Setup
+### Step 2.8: Verify Snowflake Setup
 
 ```bash
 # Check infrastructure database
@@ -665,6 +739,6 @@ snowsql -a $SNOWFLAKE_ACCOUNT -u $SNOWFLAKE_USER \
 
 ---
 
-**Deployment Checklist Version:** 1.1
-**Last Updated:** December 1, 2025
+**Deployment Checklist Version:** 1.2
+**Last Updated:** December 3, 2025
 **Maintainer:** Platform Team

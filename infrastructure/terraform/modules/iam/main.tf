@@ -65,7 +65,7 @@ locals {
   snowflake_assume_policy = var.snowflake_external_id != "" ? data.aws_iam_policy_document.snowflake_assume_with_external_id.json : data.aws_iam_policy_document.snowflake_assume_base.json
 }
 
-# Policy for Snowflake to read from Kinesis
+# Policy for Snowflake/Openflow to read from Kinesis
 data "aws_iam_policy_document" "snowflake_kinesis_read" {
   statement {
     sid    = "KinesisReadAccess"
@@ -78,7 +78,11 @@ data "aws_iam_policy_document" "snowflake_kinesis_read" {
       "kinesis:GetShardIterator",
       "kinesis:ListShards",
       "kinesis:ListStreams",
-      "kinesis:SubscribeToShard"
+      "kinesis:SubscribeToShard",
+      "kinesis:RegisterStreamConsumer",
+      "kinesis:DeregisterStreamConsumer",
+      "kinesis:DescribeStreamConsumer",
+      "kinesis:ListStreamConsumers"
     ]
 
     resources = var.kinesis_stream_arns
@@ -95,7 +99,63 @@ data "aws_iam_policy_document" "snowflake_kinesis_read" {
 
     resources = ["*"]
   }
+
+  # DynamoDB access required for KCL (Kinesis Consumer Library) checkpointing
+  # Openflow uses KCL internally for reliable stream consumption
+  statement {
+    sid    = "DynamoDBKCLAccess"
+    effect = "Allow"
+
+    actions = [
+      "dynamodb:CreateTable",
+      "dynamodb:DescribeTable",
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:Scan",
+      "dynamodb:Query"
+    ]
+
+    # KCL creates tables with naming pattern: <application-name>
+    # Our application names follow: smdh-openflow-{tenant_id}
+    resources = [
+      "arn:aws:dynamodb:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/smdh-openflow-*"
+    ]
+  }
+
+  statement {
+    sid    = "DynamoDBKCLListAccess"
+    effect = "Allow"
+
+    actions = [
+      "dynamodb:ListTables"
+    ]
+
+    resources = ["*"]
+  }
+
+  # CloudWatch metrics for KCL (optional but recommended)
+  statement {
+    sid    = "CloudWatchMetricsAccess"
+    effect = "Allow"
+
+    actions = [
+      "cloudwatch:PutMetricData"
+    ]
+
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "cloudwatch:namespace"
+      values   = ["SMDH/Openflow"]
+    }
+  }
 }
+
+# Get current AWS account ID for DynamoDB ARN construction
+data "aws_caller_identity" "current" {}
 
 resource "aws_iam_role_policy" "snowflake_kinesis_read" {
   name   = "snowflake-kinesis-read-policy"

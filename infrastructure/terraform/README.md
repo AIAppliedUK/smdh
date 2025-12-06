@@ -6,25 +6,24 @@ This directory contains the complete Infrastructure as Code (IaC) for the Smart 
 
 ```
 terraform/
- main.tf                  Root configuration orchestrating all modules
- providers.tf             AWS provider and backend configuration
- variables.tf             Input variable definitions
- outputs.tf               Output value definitions
- README.md               This file
- modules/                Reusable Terraform modules
-    iot-core/           AWS IoT Core resources
-    kinesis/            Kinesis Data Streams
-    iam/                IAM roles for Snowflake integration
-    secrets-manager/    Secrets Manager for credentials
-    cloudwatch/         Monitoring and alerting
-    tenant/             Per-tenant resources
- environments/           Environment-specific configurations
-     dev/
-        terraform.tfvars.example
-     staging/
-        terraform.tfvars.example
-     prod/
-         terraform.tfvars.example
+├── main.tf                  Root configuration orchestrating all modules
+├── providers.tf             AWS provider and backend configuration
+├── variables.tf             Input variable definitions
+├── outputs.tf               Output value definitions
+├── README.md                This file
+├── modules/                 Reusable Terraform modules
+│   ├── iot-core/            AWS IoT Core resources
+│   ├── kinesis/             Kinesis Data Streams
+│   ├── iam/                 IAM roles for Snowflake integration
+│   ├── secrets-manager/     Secrets Manager for credentials
+│   ├── cloudwatch/          Monitoring and alerting
+│   └── tenant/              Per-tenant resources
+└── environments/            Environment-specific configurations
+    └── dev/
+        ├── 01_tags.tfvars       Tagging configuration
+        ├── 02_core.tfvars       Core infrastructure settings
+        ├── 03_tenants.tfvars    Tenant definitions (add tenants here)
+        └── terraform.tfvars     Legacy single-file config (deprecated)
 ```
 
   Quick Start
@@ -56,32 +55,74 @@ terraform/
 
  Initial Setup
 
-. Copy environment configuration
-   ```bash
-   cd infrastructure/terraform
-   cp environments/dev/terraform.tfvars.example environments/dev/terraform.tfvars
+## Configuration Files
+
+The configuration is split into three files for easier maintenance:
+
+| File | Purpose | When to Edit |
+|------|---------|--------------|
+| `01_tags.tfvars` | AWS resource tags | Rarely (org-level tags) |
+| `02_core.tfvars` | Region, retention, alerts | Per environment setup |
+| `03_tenants.tfvars` | Tenant definitions | When adding/removing tenants |
+
+## Deployment Commands
+
+```bash
+cd infrastructure/terraform
+
+# Initialize Terraform
+terraform init
+
+# Deploy Core Infrastructure (no tenants)
+terraform plan \
+  -var-file=environments/dev/01_tags.tfvars \
+  -var-file=environments/dev/02_core.tfvars
+
+terraform apply \
+  -var-file=environments/dev/01_tags.tfvars \
+  -var-file=environments/dev/02_core.tfvars
+
+# Deploy with Tenants (after Openflow runtime is ready)
+terraform plan \
+  -var-file=environments/dev/01_tags.tfvars \
+  -var-file=environments/dev/02_core.tfvars \
+  -var-file=environments/dev/03_tenants.tfvars
+
+terraform apply \
+  -var-file=environments/dev/01_tags.tfvars \
+  -var-file=environments/dev/02_core.tfvars \
+  -var-file=environments/dev/03_tenants.tfvars
+```
+
+## Adding a New Tenant
+
+1. Edit `environments/dev/03_tenants.tfvars`:
+   ```hcl
+   tenants = {
+     existing_tenant = { ... }
+
+     # Add new tenant
+     new_tenant = {
+       name             = "New Tenant Inc"
+       num_sites        = 3
+       retention_days   = 90
+       warehouse_size   = "SMALL"
+       contact_email    = "ops@newtenant.com"
+       sensors_per_site = 20
+     }
+   }
    ```
 
-. Edit configuration
-   ```bash
-    Update environments/dev/terraform.tfvars with your values
-   vim environments/dev/terraform.tfvars
-   ```
+2. Run terraform apply with all three var files
+3. Complete Snowflake tenant setup (see Tenant_Onboarding_Guide.md)
+4. Configure Kinesis connector in Snowsight UI
 
-. Initialize Terraform
-   ```bash
-   terraform init
-   ```
+## Legacy Single-File Deployment (Deprecated)
 
-. Review the plan
-   ```bash
-   terraform plan -var-file=environments/dev/terraform.tfvars
-   ```
-
-. Apply configuration
-   ```bash
-   terraform apply -var-file=environments/dev/terraform.tfvars
-   ```
+For backwards compatibility, you can still use a single file:
+```bash
+terraform apply -var-file=environments/dev/terraform.tfvars
+```
 
   Module Overview
 
@@ -99,8 +140,22 @@ Creates Kinesis Data Stream:
 
  IAM Module
 Creates IAM roles:
-- Snowflake cross-account role for Kinesis access
+- Snowflake/Openflow cross-account role for Kinesis access (with IAM Role Assumption)
+- DynamoDB permissions for KCL checkpointing
+- CloudWatch metrics permissions
 - Optional Lambda execution role
+
+**Openflow IAM Role Outputs:**
+```bash
+# Get the IAM role ARN for Openflow configuration
+terraform output snowflake_iam_role_arn
+
+# Get complete Openflow credentials configuration
+terraform output -json openflow_aws_credentials_config
+
+# Get per-tenant Kinesis configuration
+terraform output -json openflow_kinesis_config_per_tenant
+```
 
  Secrets Manager Module
 Manages sensitive credentials:
@@ -328,30 +383,77 @@ For more details, see:
 
   Security Considerations
 
- Snowflake Configuration
+### Snowflake Configuration
 
 You must configure Snowflake account ID and external ID:
 
-. Get Snowflake AWS Account ID
+1. Get Snowflake AWS Account ID
    - Contact Snowflake support or check documentation
    - This is the AWS account that Snowflake uses for cross-account access
 
-. Generate External ID
+2. Generate External ID
    ```bash
-    Generate a secure random external ID
+   # Generate a secure random external ID
    uuidgen
-    Example output: E-EB-D-A-
+   # Example output: 550E8400-E29B-41D4-A716-446655440000
    ```
 
-. Update terraform.tfvars
+3. Update terraform.tfvars
    ```hcl
-   snowflake_account_id  = ""   From Snowflake
-   snowflake_external_id = "E-EB-D-A-"   Your generated UUID
+   snowflake_account_id  = "123456789012"  # From Snowflake
+   snowflake_external_id = "550E8400-E29B-41D4-A716-446655440000"  # Your generated UUID
    ```
 
-. Configure Snowflake to trust the IAM role
+4. Configure Snowflake to trust the IAM role
    - After applying Terraform, get the IAM role ARN from outputs
    - Configure this in Snowflake Openflow connector
+
+### Snowflake Openflow Setup (Snowsight UI)
+
+After deploying AWS infrastructure, you must configure Openflow in Snowsight:
+
+**One-Time Setup:**
+
+1. **Create Deployment** (Snowsight → Ingestion → Openflow):
+   - Name: `smdh-openflow-deployment`
+   - Roles: `OPENFLOW_ADMIN`, `OPENFLOW_RUNTIME_ROLE_KINESIS`
+   - Wait 15-20 minutes for Active status
+
+2. **Create Runtime**:
+   - Name: `smdh-kinesis-runtime`
+   - Role: `OPENFLOW_RUNTIME_ROLE_KINESIS`
+   - Warehouse: `SMDH_WH`
+   - External Access: `OPENFLOW_AWS_EAI`
+   - Wait 5-10 minutes for Active status
+
+3. **Configure AWS Credentials (IAM Role Assumption)**:
+   - Enter the process group by double-clicking
+   - Configure `AWSCredentialsProviderControllerService`:
+
+   | Parameter | Value | How to Get |
+   |-----------|-------|------------|
+   | Use Default Credentials | `false` | - |
+   | Assume Role ARN | IAM Role ARN | `terraform output snowflake_iam_role_arn` |
+   | Assume Role External ID | External ID | `terraform output -json openflow_aws_credentials_config` |
+   | Assume Role Session Name | `openflow-kinesis-session` | - |
+   | Assume Role STS Region | `eu-west-2` | - |
+
+   > **Why IAM Role Assumption?** This is AWS best practice for cross-account access. It eliminates the need for long-lived access keys and provides:
+   > - Better security (no credentials to rotate)
+   > - CloudTrail audit trail of role assumptions
+   > - External ID prevents "confused deputy" attacks
+
+**Per-Tenant Setup:**
+
+4. **Add Kinesis Connector** (after running `onboard_tenant_full.sh`):
+   - Stream Name: `smdh-{tenant_id}-stream`
+   - Application Name: `smdh-openflow-{tenant_id}`
+   - Database: `SMDH_TENANT_{TENANT_ID}`
+   - Table Mapping: `smdh-{tenant_id}-stream:SENSOR_READINGS`
+
+> **Note:** Openflow Deployments, Runtimes, and Connectors cannot be created via SQL - this is a Snowflake platform limitation.
+
+See [Snowflake README](../snowflake/README.md) for detailed Openflow setup instructions.
 
  Certificate Management
 

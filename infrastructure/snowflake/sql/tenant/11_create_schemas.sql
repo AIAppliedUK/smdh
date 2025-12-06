@@ -101,6 +101,19 @@ ALTER SCHEMA analytics SET DATA_RETENTION_TIME_IN_DAYS = 30;
 SELECT 'Configured ANALYTICS schema with 30-day Time Travel' AS result;
 
 -- ============================================================================
+-- 5b. Verify and Configure MART Schema
+-- ============================================================================
+
+SELECT '5b. Configuring MART Schema...' AS step;
+
+USE SCHEMA mart;
+
+-- Longer retention for business facts
+ALTER SCHEMA mart SET DATA_RETENTION_TIME_IN_DAYS = 90;
+
+SELECT 'Configured MART schema with 90-day Time Travel' AS result;
+
+-- ============================================================================
 -- 6. Create Schema Documentation Table
 -- ============================================================================
 
@@ -229,7 +242,7 @@ SELECT
     last_altered,
     comment AS description
 FROM INFORMATION_SCHEMA.TABLES
-WHERE table_schema IN ('RAW', 'NORMALIZED', 'AGGREGATED', 'ANALYTICS')
+WHERE table_schema IN ('RAW', 'NORMALIZED', 'AGGREGATED', 'ANALYTICS', 'MART')
 ORDER BY schema_name, table_name;
 
 -- View to show storage usage per schema
@@ -242,7 +255,7 @@ SELECT
     ROUND(SUM(bytes) / (1024*1024*1024), 2) AS total_size_gb,
     MAX(last_altered) AS last_modified
 FROM INFORMATION_SCHEMA.TABLES
-WHERE table_schema IN ('RAW', 'NORMALIZED', 'AGGREGATED', 'ANALYTICS')
+WHERE table_schema IN ('RAW', 'NORMALIZED', 'AGGREGATED', 'ANALYTICS', 'MART')
 GROUP BY schema_name
 ORDER BY schema_name;
 
@@ -270,6 +283,9 @@ USING (
     UNION ALL
     SELECT 'ANALYTICS', 'SCHEMA', 'analytics',
            'Analytics views, ML results, and metadata tables. Business intelligence layer.'
+    UNION ALL
+    SELECT 'MART', 'SCHEMA', 'mart',
+           'Data mart with dimensional models and fact tables. Optimized for BI and reporting.'
 ) AS source
 ON target.schema_name = source.schema_name
     AND target.object_type = source.object_type
@@ -311,6 +327,7 @@ UNION ALL SELECT '  [OK] RAW: 7-day retention, ingestion staging'
 UNION ALL SELECT '  [OK] NORMALIZED: 7-day retention, validated data'
 UNION ALL SELECT '  [OK] AGGREGATED: 30-day retention, pre-computed metrics'
 UNION ALL SELECT '  [OK] ANALYTICS: 30-day retention, views and ML results'
+UNION ALL SELECT '  [OK] MART: 90-day retention, business facts and dimensions'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Created Objects:'
 UNION ALL SELECT '  [OK] Schema documentation table'

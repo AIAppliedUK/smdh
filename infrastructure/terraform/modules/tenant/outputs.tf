@@ -101,6 +101,35 @@ output "iot_rule_arn" {
   value       = aws_iot_topic_rule.tenant_to_kinesis.arn
 }
 
+# ============================================================================
+# Per-Tenant Kinesis Stream Outputs
+# ============================================================================
+
+output "kinesis_stream_name" {
+  description = "Name of the tenant's dedicated Kinesis stream"
+  value       = aws_kinesis_stream.tenant.name
+}
+
+output "kinesis_stream_arn" {
+  description = "ARN of the tenant's dedicated Kinesis stream"
+  value       = aws_kinesis_stream.tenant.arn
+}
+
+output "kinesis_stream_config" {
+  description = "Kinesis stream configuration for Snowflake Openflow setup"
+  value = {
+    stream_name    = aws_kinesis_stream.tenant.name
+    stream_arn     = aws_kinesis_stream.tenant.arn
+    region         = var.aws_region
+    retention_hours = var.kinesis_retention_hours
+    # Openflow connector settings
+    openflow_application_name = "smdh-openflow-${var.tenant_id}"
+    target_database           = "SMDH_TENANT_${upper(var.tenant_id)}"
+    target_schema             = "RAW"
+    target_table              = "SENSOR_READINGS"
+  }
+}
+
 output "sns_topic_arn" {
   description = "ARN of the SNS topic for tenant alerts"
   value       = aws_sns_topic.tenant_alerts.arn

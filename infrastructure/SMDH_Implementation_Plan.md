@@ -102,11 +102,17 @@ Required Resources:
    - Certificate generation and attachment
    - IoT Rules Engine rules (per tenant)
 
-. Kinesis Data Streams
-   - Stream name: `smdh-sensor-data-stream`
-   - Mode: On-demand
-   - Retention:  hours
+. Kinesis Data Streams (Per-Tenant Architecture)
+   - **Architecture Decision**: One Kinesis stream per tenant for data isolation
+   - Stream naming: `smdh-{tenant_id}-stream` (e.g., `smdh-abc_manufacturing-stream`)
+   - Mode: On-demand (auto-scaling)
+   - Retention: 24 hours
    - Encryption: AWS managed keys
+   - **Rationale**: Per-tenant streams provide:
+     - Complete data isolation between tenants
+     - Independent scaling per tenant workload
+     - Simplified stream-to-table routing in Openflow
+     - Easier debugging and monitoring per tenant
 
 . Secrets Manager
    - Secret: `smdh/snowflake/private-key`
@@ -157,18 +163,16 @@ provider "aws" {
 }
 
  Core infrastructure
-module "kinesis" {
-  source = "./modules/kinesis"
-
-  stream_name = "smdh-sensor-data-stream"
-  environment = var.environment
-}
+ NOTE: Kinesis streams are created per-tenant in modules/tenant
+ This is REQUIRED because Snowflake Openflow cannot filter from a shared stream
 
 module "iot_core" {
   source = "./modules/iot-core"
 
-  thing_type_name = "LoRaWANGateway"
-  environment     = var.environment
+  thing_type_name     = "LoRaWANGateway"
+  environment         = var.environment
+   Allow IoT rules to write to any tenant stream (wildcard pattern)
+  kinesis_stream_arns = ["arn:aws:kinesis:${var.aws_region}:${data.aws_caller_identity.current.account_id}:stream/smdh-*-stream"]
 }
 
 module "cloudwatch" {
@@ -181,24 +185,26 @@ module "cloudwatch" {
 module "iam" {
   source = "./modules/iam"
 
-  kinesis_stream_arn = module.kinesis.stream_arn
-  snowflake_account_id = var.snowflake_account_id
+   Allow Snowflake Openflow to read from any tenant stream
+  kinesis_stream_arns   = ["arn:aws:kinesis:${var.aws_region}:${data.aws_caller_identity.current.account_id}:stream/smdh-*-stream"]
+  snowflake_account_id  = var.snowflake_account_id
   snowflake_external_id = var.snowflake_external_id
 }
 
- Per-tenant resources
+ Per-tenant resources (including dedicated Kinesis stream per tenant)
 module "tenants" {
   source = "./modules/tenant"
 
   for_each = var.tenants
 
-  tenant_id       = each.key
-  tenant_name     = each.value.name
-  num_sites       = each.value.num_sites
-  iot_endpoint    = module.iot_core.endpoint
-  kinesis_stream  = module.kinesis.stream_name
-  aws_account_id  = data.aws_caller_identity.current.account_id
-  aws_region      = var.aws_region
+  tenant_id              = each.key
+  tenant_name            = each.value.name
+  num_sites              = each.value.num_sites
+  iot_kinesis_role_arn   = module.iot_core.iot_kinesis_role_arn
+  kinesis_retention_hours = 24
+  aws_account_id         = data.aws_caller_identity.current.account_id
+  aws_region             = var.aws_region
+   Each tenant gets their own Kinesis stream: smdh-{tenant_id}-stream
 }
 ```
 
@@ -251,30 +257,68 @@ variable "tenants" {
 
  . Snowflake Setup Scripts
 
-Purpose: Initialize Snowflake environment and tenant databases
+Purpose: Initialize Snowflake environment, configure Openflow for Kinesis ingestion, and create tenant databases
+
+ .. Kinesis-to-Snowflake Integration via Openflow
+
+**Architecture Decision**: Use Snowflake Openflow Connector for native Kinesis integration
+
+The Openflow Connector (acquired from Datavolo in 2024) provides native Kinesis Data Stream ingestion without requiring intermediate S3 storage. Key benefits:
+- Real-time streaming ingestion (sub-second latency)
+- Native stream-to-table routing per tenant
+- DynamoDB-based checkpointing for exactly-once delivery
+- Managed by Snowflake (no additional infrastructure)
+
+**Stream-to-Table Routing**: Each tenant's Kinesis stream maps directly to their Snowflake table:
+```
+smdh-abc_manufacturing-stream → SMDH_TENANT_ABC_MANUFACTURING.RAW.sensor_readings
+smdh-xyz_corp-stream → SMDH_TENANT_XYZ_CORP.RAW.sensor_readings
+```
 
  .. Infrastructure Setup Scripts
 
-Files to create:
+Current directory structure:
 ```
 infrastructure/snowflake/
- _prerequisites.sql              Check Snowflake version, features
- _infrastructure_setup.sql       Create infrastructure database
- _shared_resources.sql           Warehouses, roles, users
- _openflow_connector.sql         Openflow/Kinesis integration
- tenant/
-    _create_tenant_database.sql     Database creation template
-    _create_schemas.sql             Schema creation
-    _create_tables.sql              Table definitions
-    _create_streams.sql             CDC streams
-    _create_tasks.sql               Processing tasks
-    _create_dynamic_tables.sql      Aggregation tables
-    _create_roles.sql               RBAC setup
-    _create_monitoring.sql          Monitoring views
- scripts/
-     onboard_tenant.sh                 Bash wrapper script
-     validate_tenant.sql               Validation queries
+├── sql/
+│   └── core/
+│       ├── 01_infrastructure_setup.sql    # Infrastructure database
+│       ├── 02_shared_resources.sql        # Warehouses, roles
+│       └── 03_openflow_connector.sql      # Openflow Kinesis integration
+├── tenant/
+│   ├── 10_create_tenant_database.sql      # Database creation
+│   ├── 11_create_schemas.sql              # Schema creation
+│   ├── 12_create_tables.sql               # Table definitions
+│   ├── 13_create_streams.sql              # CDC streams
+│   ├── 14_create_tasks.sql                # Processing tasks
+│   ├── 15_create_dynamic_tables.sql       # Aggregation tables
+│   ├── 16_create_roles.sql                # RBAC setup
+│   └── 17_create_monitoring.sql           # Monitoring views
+├── scripts/
+│   ├── setup_openflow.sh                  # Automated Openflow setup
+│   ├── onboard_tenant.sh                  # Tenant onboarding
+│   └── validate_setup.sh                  # Validation script
+└── docs/deployment/
+    └── Tenant_Onboarding_Guide.md         # Comprehensive onboarding guide
 ```
+
+ .. Openflow Connector Setup (03_openflow_connector.sql)
+
+This script creates all Snowflake resources needed for Kinesis integration:
+- `OPENFLOW_ADMIN` role with deployment/runtime privileges
+- `OPENFLOW_RUNTIME_ROLE_KINESIS` role for connector execution
+- `OPENFLOW` database with image repository
+- Network rules for AWS Kinesis/DynamoDB/STS access (eu-west-2)
+- External Access Integration (`OPENFLOW_AWS_EAI`)
+- Connector tracking table (`openflow_connectors`)
+- Monitoring views for connector health
+
+**Important**: After running the SQL script, manual UI steps are required in Snowsight:
+1. Create Deployment (Data > Openflow > Create Deployment)
+2. Create Runtime with `OPENFLOW_RUNTIME_ROLE_KINESIS`
+3. Add Kinesis Connector with stream-to-table mapping
+
+See: `docs/deployment/Tenant_Onboarding_Guide.md` for complete instructions
 
 Key SQL Scripts:
 
@@ -509,6 +553,19 @@ ALTER TABLE normalized.sensor_metrics SET DATA_RETENTION_TIME_IN_DAYS = ;
 
 Purpose: Automate complete tenant provisioning from zero to production
 
+**Per-Tenant Resources Created**:
+- AWS: Dedicated Kinesis stream, IoT policy, IoT rule routing to tenant stream
+- Snowflake: Tenant database with RAW/NORMALIZED/AGGREGATED/ANALYTICS schemas
+- Openflow: Stream-to-table mapping added to Kinesis connector configuration
+
+**Detailed Onboarding Guide**: See `docs/deployment/Tenant_Onboarding_Guide.md` for complete step-by-step instructions including:
+- AWS Kinesis stream creation
+- IAM role configuration
+- IoT rule setup
+- Snowflake database provisioning
+- Openflow connector configuration
+- Verification and testing
+
  .. Onboarding Script
 
 File: `infrastructure/scripts/onboard_tenant.sh`
@@ -694,7 +751,7 @@ log_info "========================================="
 echo ""
 echo " Deliverables:"
 echo "    AWS IoT Core: Things, policies, rules created"
-echo "    Kinesis Stream: $KINESIS_STREAM (partition key: $TENANT_ID)"
+echo "    Kinesis Stream: smdh-${TENANT_ID}-stream (dedicated per-tenant stream)"
 echo "    Snowflake Database: smdh_tenant_${TENANT_ID}"
 echo "    Certificates: $CERT_DIR"
 echo "    CloudWatch Dashboard: https://console.aws.amazon.com/cloudwatch/home?region=${AWS_REGION}dashboards:name=smdh-${TENANT_ID}"
@@ -705,6 +762,7 @@ echo "   . Configure gateway MQTT settings:"
 echo "      - Server: $IOT_ENDPOINT"
 echo "      - Port: "
 echo "      - Topic: smdh/${TENANT_ID}/{site_id}/sensor-data"
+echo "   . Create Openflow connector in Snowsight for smdh-${TENANT_ID}-stream"
 echo "   . Test data flow with: infrastructure/scripts/test_data_flow.sh ${TENANT_ID}"
 echo "   . Verify data in Snowflake"
 echo ""
@@ -761,14 +819,14 @@ aws cloudwatch get-metric-statistics \
     --query 'Datapoints[].Sum' \
     --output text
 
- Check : Kinesis Stream Status
+ Check : Kinesis Stream Status (Per-Tenant Stream)
 echo ""
-echo ". Kinesis Stream Health"
-aws kinesis describe-stream \
-    --stream-name smdh-sensor-data-stream \
+echo ". Tenant Kinesis Stream Health"
+aws kinesis describe-stream-summary \
+    --stream-name "smdh-${TENANT_ID}-stream" \
     --region "$AWS_REGION" \
-    --query 'StreamDescription.StreamStatus' \
-    --output text
+    --query 'StreamDescriptionSummary.{Status:StreamStatus,OpenShards:OpenShardCount}' \
+    --output table
 
  Check : Certificate Expiry
 echo ""
@@ -841,12 +899,13 @@ aws iot-data publish \
 echo " Test message published"
 echo ""
 
- Test : Verify message in Kinesis
-echo "Test : Checking Kinesis stream (waiting  seconds)..."
-sleep 
+ Test : Verify message in tenant's Kinesis stream
+echo "Test : Checking tenant Kinesis stream (waiting  seconds)..."
+sleep
 
+ Each tenant has their own stream: smdh-{tenant_id}-stream
 SHARD_ITERATOR=$(aws kinesis get-shard-iterator \
-    --stream-name smdh-sensor-data-stream \
+    --stream-name "smdh-${TENANT_ID}-stream" \
     --shard-id shardId- \
     --shard-iterator-type LATEST \
     --region "$AWS_REGION" \
@@ -859,9 +918,9 @@ RECORDS=$(aws kinesis get-records \
     --query 'Records | length(@)')
 
 if [ "$RECORDS" -gt  ]; then
-    echo " Found $RECORDS records in Kinesis"
+    echo " Found $RECORDS records in smdh-${TENANT_ID}-stream"
 else
-    echo " No records found in Kinesis (may need to wait longer)"
+    echo " No records found in smdh-${TENANT_ID}-stream (may need to wait longer)"
 fi
 echo ""
 
@@ -909,14 +968,17 @@ echo "========================================="
 
  . Phase : Snowflake Setup (Week )
 
-- [ ] Create infrastructure setup SQL scripts
-- [ ] Create tenant database template scripts
-- [ ] Create table definition scripts
-- [ ] Create streams and tasks scripts
-- [ ] Create RBAC scripts
-- [ ] Test scripts in Snowflake dev account
-- [ ] Create Openflow connector configuration
-- [ ] Document Snowflake setup process
+- [x] Create infrastructure setup SQL scripts (`01_infrastructure_setup.sql`)
+- [x] Create shared resources scripts (`02_shared_resources.sql`)
+- [x] Create Openflow connector configuration (`03_openflow_connector.sql`)
+- [x] Create tenant database template scripts (`10_create_tenant_database.sql`)
+- [x] Create table definition scripts (`12_create_tables.sql`)
+- [x] Create streams and tasks scripts (`13_create_streams.sql`, `14_create_tasks.sql`)
+- [x] Create RBAC scripts (`16_create_roles.sql`)
+- [x] Create setup automation script (`setup_openflow.sh`)
+- [x] Document Snowflake setup process (`Tenant_Onboarding_Guide.md`)
+- [ ] Complete Openflow UI configuration (Deployment, Runtime, Kinesis Connector)
+- [ ] Test end-to-end data flow from IoT → Kinesis → Snowflake
 
  . Phase : Automation (Week -)
 

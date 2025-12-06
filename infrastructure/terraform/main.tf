@@ -1,9 +1,15 @@
 # SMDH Root Terraform Configuration
 # Orchestrates all modules to deploy complete SMDH infrastructure
+#
+# ARCHITECTURE: Per-Tenant Kinesis Streams
+# Each tenant gets their own dedicated Kinesis stream for Snowflake Openflow integration.
+# Streams are created in the tenant module (modules/tenant), NOT as a shared resource.
+# This architecture is REQUIRED because Openflow cannot filter records from a shared stream.
 
 # Core Infrastructure Modules
 
 # IoT Core - MQTT broker and thing types
+# Note: kinesis_stream_arns uses wildcard pattern to allow writing to any tenant stream
 module "iot_core" {
   source = "./modules/iot-core"
 
@@ -12,7 +18,8 @@ module "iot_core" {
   lorawan_thing_type_name   = "LoRaWANGateway"
   devtank_thing_type_name   = "DevTankOSM"
   log_level                 = var.environment == "prod" ? "INFO" : "DEBUG"
-  kinesis_stream_arns       = [module.kinesis.stream_arn]
+  # Allow IoT rules to write to any tenant stream (smdh-*-stream pattern)
+  kinesis_stream_arns       = ["arn:aws:kinesis:${var.aws_region}:${data.aws_caller_identity.current.account_id}:stream/smdh-*-stream"]
 
   tags = merge(
     local.common_tags,
@@ -24,38 +31,22 @@ module "iot_core" {
   )
 }
 
-# Kinesis - Data stream for sensor data buffering
-module "kinesis" {
-  source = "./modules/kinesis"
+# NOTE: Per-tenant Kinesis streams are created in modules/tenant
+# Each tenant gets their own stream: smdh-{tenant_id}-stream
+# This is required for Snowflake Openflow data isolation
 
-  stream_name                = "${var.project_name}-sensor-data-stream"
-  retention_hours            = var.kinesis_retention_hours
-  encryption_type            = "KMS"
-  enable_enhanced_monitoring = true
-  enable_monitoring          = var.enable_monitoring
-  iterator_age_threshold_ms  = 60000 # 60 seconds
-  alarm_actions              = var.enable_monitoring ? [module.cloudwatch.sns_topic_arn] : []
-
-  tags = merge(
-    local.common_tags,
-    {
-      Component   = "Data-Ingestion"
-      Service     = "Kinesis-Stream"
-      Description = "Sensor data buffer and ordering"
-      DataFlow    = "IoT-to-Snowflake"
-    }
-  )
-}
-
-# IAM - Roles for Snowflake and service integrations
+# IAM - Roles for Snowflake/Openflow and service integrations
+# Uses wildcard pattern for tenant streams since Openflow needs to read from all tenant streams
 module "iam" {
   source = "./modules/iam"
 
   project_name           = var.project_name
   environment            = var.environment
+  aws_region             = var.aws_region
   snowflake_account_id   = var.snowflake_account_id
   snowflake_external_id  = var.snowflake_external_id
-  kinesis_stream_arns    = [module.kinesis.stream_arn]
+  # Allow Snowflake/Openflow to read from any tenant stream (smdh-*-stream pattern)
+  kinesis_stream_arns    = ["arn:aws:kinesis:${var.aws_region}:${data.aws_caller_identity.current.account_id}:stream/smdh-*-stream"]
   create_lambda_role     = false
   secrets_manager_arns   = [module.secrets_manager.secret_arn]
 
@@ -115,7 +106,8 @@ module "cloudwatch" {
   )
 }
 
-# Tenant Resources - Per-tenant IoT things, certificates, policies, rules
+# Tenant Resources - Per-tenant IoT things, certificates, policies, Kinesis streams, and rules
+# Each tenant gets their own dedicated Kinesis stream for Snowflake Openflow data isolation
 module "tenants" {
   source   = "./modules/tenant"
   for_each = var.tenants
@@ -128,7 +120,7 @@ module "tenants" {
   lorawan_thing_type_name        = module.iot_core.lorawan_thing_type_name
   network_server_thing_type_name = module.iot_core.network_server_thing_type_name
   iot_kinesis_role_arn           = module.iot_core.iot_kinesis_role_arn
-  kinesis_stream_name            = module.kinesis.stream_name
+  kinesis_retention_hours        = var.kinesis_retention_hours
   contact_email                  = try(each.value.contact_email, "")
   enable_monitoring              = var.enable_monitoring
 
@@ -151,8 +143,5 @@ module "tenants" {
     }
   )
 
-  depends_on = [
-    module.iot_core,
-    module.kinesis
-  ]
+  depends_on = [module.iot_core]
 }

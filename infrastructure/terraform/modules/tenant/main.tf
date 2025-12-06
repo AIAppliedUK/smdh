@@ -1,5 +1,10 @@
 # SMDH Tenant Module
-# Creates per-tenant resources: IoT Things, Certificates, Policies, and Rules
+# Creates per-tenant resources: Kinesis Stream, IoT Things, Certificates, Policies, and Rules
+#
+# ARCHITECTURE: Per-Tenant Kinesis Streams
+# Each tenant gets their own dedicated Kinesis stream for Snowflake Openflow integration.
+# The Openflow connector cannot filter records from a shared stream, so per-tenant streams
+# are required for proper data isolation.
 
 terraform {
   required_providers {
@@ -30,6 +35,81 @@ locals {
 
   # Network server thing name (only used in network_server mode)
   network_server_thing_name = "smdh-ns-${var.tenant_id}-${var.network_server_name}"
+
+  # Per-tenant Kinesis stream name
+  kinesis_stream_name = "smdh-${var.tenant_id}-stream"
+}
+
+# ============================================================================
+# Per-Tenant Kinesis Stream (Required for Snowflake Openflow Integration)
+# ============================================================================
+
+# Kinesis Data Stream - On-demand mode for per-tenant data isolation
+resource "aws_kinesis_stream" "tenant" {
+  name = local.kinesis_stream_name
+
+  # On-demand mode - automatically scales with throughput
+  stream_mode_details {
+    stream_mode = "ON_DEMAND"
+  }
+
+  # Retention period
+  retention_period = var.kinesis_retention_hours
+
+  # Encryption at rest using AWS managed keys
+  encryption_type = "KMS"
+  kms_key_id      = "alias/aws/kinesis"
+
+  # Enable enhanced monitoring for per-tenant visibility
+  shard_level_metrics = var.enable_monitoring ? [
+    "IncomingBytes",
+    "IncomingRecords",
+    "OutgoingBytes",
+    "OutgoingRecords",
+    "WriteProvisionedThroughputExceeded",
+    "ReadProvisionedThroughputExceeded",
+    "IteratorAgeMilliseconds"
+  ] : []
+
+  tags = merge(
+    var.tags,
+    {
+      Name        = local.kinesis_stream_name
+      TenantId    = var.tenant_id
+      Description = "Per-tenant sensor data stream for Snowflake Openflow"
+      Purpose     = "IoT Data Ingestion"
+      DataFlow    = "IoT-to-Snowflake"
+    }
+  )
+}
+
+# CloudWatch alarm for tenant stream iterator age (processing lag)
+resource "aws_cloudwatch_metric_alarm" "kinesis_iterator_age" {
+  count = var.enable_monitoring ? 1 : 0
+
+  alarm_name          = "${local.kinesis_stream_name}-iterator-age-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "GetRecords.IteratorAgeMilliseconds"
+  namespace           = "AWS/Kinesis"
+  period              = 60
+  statistic           = "Maximum"
+  threshold           = 60000 # 60 seconds
+  alarm_description   = "Alert when Kinesis iterator age exceeds 60s for tenant ${var.tenant_id}"
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    StreamName = aws_kinesis_stream.tenant.name
+  }
+
+  alarm_actions = [aws_sns_topic.tenant_alerts.arn]
+
+  tags = merge(
+    var.tags,
+    {
+      TenantId = var.tenant_id
+    }
+  )
 }
 
 # Create IoT Things for each gateway
@@ -165,10 +245,10 @@ resource "aws_iot_policy_attachment" "network_server" {
   target = aws_iot_certificate.network_server[0].arn
 }
 
-# Create IoT Rule to route tenant data to Kinesis
+# Create IoT Rule to route tenant data to tenant's dedicated Kinesis stream
 resource "aws_iot_topic_rule" "tenant_to_kinesis" {
   name        = "smdh_route_${replace(var.tenant_id, "-", "_")}"
-  description = "Route ${var.tenant_id} sensor data to Kinesis with tenant isolation"
+  description = "Route ${var.tenant_id} sensor data to dedicated Kinesis stream"
   enabled     = true
 
   sql         = "SELECT *, topic(2) as tenant_id, topic(3) as site_id, timestamp() as iot_timestamp, clientId() as device_id FROM 'smdh/${var.tenant_id}/+/sensor-data'"
@@ -176,8 +256,8 @@ resource "aws_iot_topic_rule" "tenant_to_kinesis" {
 
   kinesis {
     role_arn      = var.iot_kinesis_role_arn
-    stream_name   = var.kinesis_stream_name
-    partition_key = var.tenant_id
+    stream_name   = aws_kinesis_stream.tenant.name  # Use tenant's dedicated stream
+    partition_key = "$${topic(3)}"                  # Partition by site_id for ordering
   }
 
   error_action {
@@ -200,6 +280,8 @@ resource "aws_iot_topic_rule" "tenant_to_kinesis" {
   lifecycle {
     ignore_changes = [tags_all]
   }
+
+  depends_on = [aws_kinesis_stream.tenant]
 }
 
 # SNS Topic for tenant-specific alerts

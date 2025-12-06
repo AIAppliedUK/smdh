@@ -69,9 +69,15 @@ variable "iot_kinesis_role_arn" {
   type        = string
 }
 
-variable "kinesis_stream_name" {
-  description = "Name of the Kinesis data stream"
-  type        = string
+variable "kinesis_retention_hours" {
+  description = "Kinesis stream retention period in hours (24-8760)"
+  type        = number
+  default     = 24
+
+  validation {
+    condition     = var.kinesis_retention_hours >= 24 && var.kinesis_retention_hours <= 8760
+    error_message = "Kinesis retention must be between 24 hours (1 day) and 8760 hours (365 days)"
+  }
 }
 
 variable "contact_email" {

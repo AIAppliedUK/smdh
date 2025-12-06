@@ -64,6 +64,78 @@ infrastructure/
     └── SMDH_Infrastructure_Implementation.md
 ```
 
+## Infrastructure Architecture
+
+The infrastructure is divided into **Core** (one-time setup) and **Tenant** (per-tenant) components:
+
+### Core Infrastructure (Deploy Once)
+
+| Layer | Component | Description |
+|-------|-----------|-------------|
+| AWS | IoT Core | Thing types, logging configuration |
+| AWS | IAM | Roles for Snowflake integration |
+| AWS | CloudWatch | Platform-wide dashboard and base alarms |
+| AWS | Secrets Manager | Credential storage |
+| AWS | IAM User | Dedicated user for Openflow Kinesis access |
+| Snowflake | Infrastructure DB | `SMDH_INFRASTRUCTURE` with tenant configs |
+| Snowflake | Warehouse | `SMDH_WH` shared compute |
+| Snowflake | Roles | Base roles and Openflow runtime role |
+| Snowflake | External Access | `OPENFLOW_AWS_EAI` for AWS connectivity |
+| Snowflake | Openflow | Deployment and runtime (manual via Snowsight) |
+
+### Tenant Infrastructure (Deploy Per Tenant)
+
+| Layer | Component | Description |
+|-------|-----------|-------------|
+| AWS | Kinesis Stream | `smdh-{tenant_id}-stream` per tenant |
+| AWS | IoT Policy | Tenant-scoped MQTT topic access |
+| AWS | IoT Rule | Routes messages to tenant's Kinesis stream |
+| AWS | Certificates | Per-site X.509 certificates |
+| AWS | Thing Groups | Tenant and site hierarchy |
+| AWS | CloudWatch Alarms | Per-stream iterator age and error alarms |
+| Snowflake | Tenant Database | `SMDH_TENANT_{TENANT_ID}` |
+| Snowflake | Schemas | RAW, NORMALIZED, AGGREGATED, ANALYTICS |
+| Snowflake | Tables | Typed sensor tables and metadata |
+| Snowflake | Streams | CDC streams for data routing |
+| Snowflake | Tasks | Automated data routing task |
+| Snowflake | Roles | Tenant-specific access roles |
+| Snowflake | Kinesis Connector | Openflow connector (manual via Snowsight) |
+
+### Deployment Order
+
+The deployment must follow this order due to dependencies:
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         CORE INFRASTRUCTURE                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Phase 1: AWS Core                                                       │
+│  └── terraform apply -var-file=environments/dev/core.tfvars             │
+│                                                                          │
+│  Phase 2: IAM User for Openflow                                          │
+│  └── aws iam create-user + create-access-key                            │
+│                                                                          │
+│  Phase 3: Snowflake Core                                                 │
+│  └── snowsql -f 01, 02, 03 scripts                                      │
+│                                                                          │
+│  Phase 4: Openflow Runtime (Manual - Snowsight UI)                       │
+│  └── Create deployment → Create runtime                                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│                        TENANT INFRASTRUCTURE                             │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Phase 5: AWS Tenant                                                     │
+│  └── terraform apply -var-file=environments/dev/terraform.tfvars        │
+│                                                                          │
+│  Phase 6: Snowflake Tenant                                               │
+│  └── snowsql -f 10, 11, 12, 13, 14, 16 scripts                          │
+│                                                                          │
+│  Phase 7: Kinesis Connector (Manual - Snowsight UI)                      │
+│  └── Add connector to runtime for tenant's stream                        │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## Prerequisites
 
 ### 1. AWS Account
@@ -120,7 +192,9 @@ terraform version
 
 ## Quick Start
 
-### Step 1: Create Terraform State Backend
+### Prerequisites Setup
+
+#### Create Terraform State Backend
 
 Before deploying infrastructure, create an S3 bucket and DynamoDB table for Terraform state management:
 
@@ -142,31 +216,7 @@ aws dynamodb create-table \
   --region eu-west-2
 ```
 
-### Step 2: Deploy AWS Infrastructure
-
-```bash
-cd infrastructure/terraform
-
-# Copy and configure environment variables
-cp environments/dev/terraform.tfvars.example environments/dev/terraform.tfvars
-# Edit terraform.tfvars with your settings
-
-# Initialize Terraform (connects to S3 backend)
-terraform init
-
-# Review the plan
-terraform plan -var-file=environments/dev/terraform.tfvars
-
-# Apply configuration
-terraform apply -var-file=environments/dev/terraform.tfvars
-
-# Note the outputs - you'll need these for Snowflake setup
-terraform output
-```
-
-### Step 3: Deploy Snowflake Infrastructure
-
-First, configure SnowSQL with your Snowflake account details:
+#### Configure SnowSQL
 
 ```bash
 # Configure SnowSQL (creates ~/.snowsql/config)
@@ -178,51 +228,346 @@ snowsql -a <your-account> -u <your-user>
 # accountname = <your-account>
 # username = <your-user>
 # password = <your-password>
-```
 
-Then deploy the infrastructure:
-
-```bash
-cd infrastructure/snowflake/scripts
-
-# Set credentials for scripts
+# Set credentials for command-line use
 export SNOWFLAKE_ACCOUNT="your-account"
 export SNOWFLAKE_USER="your-user"
 export SNOWSQL_PWD="your-password"
-
-# Deploy core infrastructure
-./snowflake.sh deploy
-
-# Verify deployment
-./snowflake.sh status
 ```
 
-### Step 4: Configure Kinesis Integration
+---
+
+## Core Infrastructure Deployment
+
+### Phase 1: Deploy AWS Core
+
+Deploy AWS core infrastructure (IoT Core, IAM roles, CloudWatch dashboard) **without** any tenants:
 
 ```bash
-# Get AWS IAM role details from Terraform output
 cd infrastructure/terraform
-terraform output snowflake_kinesis_role_arn
 
-# Configure Snowflake to read from Kinesis
-cd infrastructure/snowflake/scripts
-./setup_kinesis_integration.sh
+# Initialise Terraform (connects to S3 backend)
+terraform init
+
+# Review the core-only plan (no tenants)
+terraform plan -var-file=environments/dev/core.tfvars
+
+# Apply core configuration
+terraform apply -var-file=environments/dev/core.tfvars
 ```
 
-### Step 5: Onboard Your First Tenant
+### Phase 2: Create IAM User for Openflow
+
+**IMPORTANT:** Openflow Kinesis connector only supports IAM Access Key authentication. Role assumption is NOT supported.
 
 ```bash
-cd infrastructure/snowflake/scripts
+# Create dedicated IAM user
+aws iam create-user --user-name smdh-openflow-kinesis-user --region eu-west-2
 
-# Create tenant infrastructure
-./onboard_tenant.sh \
-  --tenant-id mycompany \
-  --tenant-name "My Company Ltd" \
-  --num-sites 2 \
-  --contact-email alerts@mycompany.com
+# Get your AWS account ID
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+# Create policy document
+cat > /tmp/openflow-kinesis-policy.json << EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "KinesisAccess",
+      "Effect": "Allow",
+      "Action": [
+        "kinesis:DescribeStream",
+        "kinesis:DescribeStreamSummary",
+        "kinesis:GetShardIterator",
+        "kinesis:GetRecords",
+        "kinesis:ListShards"
+      ],
+      "Resource": "arn:aws:kinesis:eu-west-2:${AWS_ACCOUNT_ID}:stream/smdh-*"
+    },
+    {
+      "Sid": "DynamoDBAccess",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:CreateTable",
+        "dynamodb:UpdateTable",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:Scan",
+        "dynamodb:Query"
+      ],
+      "Resource": "arn:aws:dynamodb:eu-west-2:${AWS_ACCOUNT_ID}:table/smdh-*"
+    },
+    {
+      "Sid": "DynamoDBListTables",
+      "Effect": "Allow",
+      "Action": ["dynamodb:ListTables"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "CloudWatchMetrics",
+      "Effect": "Allow",
+      "Action": ["cloudwatch:PutMetricData"],
+      "Resource": "*"
+    }
+  ]
+}
+EOF
+
+# Attach policy to user
+aws iam put-user-policy \
+  --user-name smdh-openflow-kinesis-user \
+  --policy-name smdh-openflow-kinesis-policy \
+  --policy-document file:///tmp/openflow-kinesis-policy.json \
+  --region eu-west-2
+
+# Create access keys - SAVE THESE SECURELY
+aws iam create-access-key --user-name smdh-openflow-kinesis-user --region eu-west-2
 ```
 
-### Step 6: Configure Gateway
+**Store the Access Key ID and Secret Access Key securely** - you will need them when configuring the Kinesis connector in Snowsight.
+
+> **Note:** The Kinesis Client Library (KCL) uses DynamoDB for checkpointing. The `dynamodb:UpdateTable` permission is required for lease management.
+
+### Phase 3: Deploy Snowflake Core
+
+```bash
+cd infrastructure/snowflake/sql/core
+
+# Deploy infrastructure database, warehouse, and roles
+snowsql -a $SNOWFLAKE_ACCOUNT -u $SNOWFLAKE_USER -r ACCOUNTADMIN \
+  -f 01_infrastructure_setup.sql
+
+# Deploy shared resources (warehouse, monitoring)
+snowsql -a $SNOWFLAKE_ACCOUNT -u $SNOWFLAKE_USER -r ACCOUNTADMIN \
+  -f 02_shared_resources.sql
+
+# Deploy Openflow configuration (external access, roles)
+snowsql -a $SNOWFLAKE_ACCOUNT -u $SNOWFLAKE_USER -r ACCOUNTADMIN \
+  -f 03_openflow_connector.sql
+```
+
+### Phase 4: Configure Openflow Runtime (Snowsight UI)
+
+**Note:** Openflow Deployments and Runtimes cannot be created via SQL - this requires the Snowsight UI.
+
+**Create Deployment:**
+1. Open **Snowsight** → **Ingestion** → **Openflow**
+2. Click **+ Create deployment**
+3. Configure:
+   - **Name**: `smdh-openflow-deployment`
+   - **Type**: Snowflake Deployment (managed)
+4. Click **Create deployment**
+5. **Wait 15-20 minutes** for deployment to become Active
+
+**Create Runtime:**
+1. In Snowsight → **Ingestion** → **Openflow** → your deployment
+2. Click **+ Create runtime**
+3. Configure:
+   - **Name**: `smdh-kinesis-runtime`
+   - **Role**: `OPENFLOW_RUNTIME_ROLE_KINESIS`
+   - **Warehouse**: `SMDH_WH`
+   - **External Access Integration**: `OPENFLOW_AWS_EAI`
+4. Click **Create**
+5. **Wait 5-10 minutes** for runtime to become Active
+
+---
+
+## Tenant Infrastructure Deployment
+
+### Phase 5: Deploy AWS Tenant Infrastructure
+
+Add your tenant configuration to `terraform.tfvars` and apply:
+
+```bash
+cd infrastructure/terraform
+
+# Edit terraform.tfvars to add tenants
+# Example configuration:
+cat >> environments/dev/terraform.tfvars << 'EOF'
+
+tenants = {
+  mycompany = {
+    name             = "My Company Ltd"
+    num_sites        = 3
+    retention_days   = 90
+    warehouse_size   = "SMALL"
+    contact_email    = "alerts@mycompany.com"
+    sensors_per_site = 30
+  }
+}
+EOF
+
+# Review tenant resources to be created
+terraform plan -var-file=environments/dev/terraform.tfvars
+
+# Apply tenant configuration
+terraform apply -var-file=environments/dev/terraform.tfvars
+```
+
+This creates for each tenant:
+- Kinesis Data Stream (`smdh-{tenant_id}-stream`)
+- IoT Policy with tenant-scoped topic access
+- IoT Rule routing to the tenant's Kinesis stream
+- X.509 certificates for each site
+- Thing Groups for tenant and site hierarchy
+- CloudWatch alarms for stream health
+
+### Phase 6: Deploy Snowflake Tenant Infrastructure
+
+```bash
+cd infrastructure/snowflake/sql/tenant
+
+# Set tenant ID for all scripts
+TENANT_ID="mycompany"
+
+# Create tenant database
+snowsql -a $SNOWFLAKE_ACCOUNT -u $SNOWFLAKE_USER -r ACCOUNTADMIN -w SMDH_WH \
+  -f 10_create_tenant_database.sql \
+  --variable tenant_id=$TENANT_ID
+
+# Create schemas (RAW, NORMALIZED, AGGREGATED, ANALYTICS)
+snowsql -a $SNOWFLAKE_ACCOUNT -u $SNOWFLAKE_USER -r ACCOUNTADMIN -w SMDH_WH \
+  -f 11_create_schemas.sql \
+  --variable tenant_id=$TENANT_ID
+
+# Create typed sensor tables
+snowsql -a $SNOWFLAKE_ACCOUNT -u $SNOWFLAKE_USER -r ACCOUNTADMIN -w SMDH_WH \
+  -f 12_create_tables.sql \
+  --variable tenant_id=$TENANT_ID
+
+# Create CDC streams
+snowsql -a $SNOWFLAKE_ACCOUNT -u $SNOWFLAKE_USER -r ACCOUNTADMIN -w SMDH_WH \
+  -f 13_create_streams.sql \
+  --variable tenant_id=$TENANT_ID
+
+# Create tenant roles
+snowsql -a $SNOWFLAKE_ACCOUNT -u $SNOWFLAKE_USER -r ACCOUNTADMIN -w SMDH_WH \
+  -f 16_create_roles.sql \
+  --variable tenant_id=$TENANT_ID
+
+# Grant Openflow access to tenant database
+snowsql -a $SNOWFLAKE_ACCOUNT -u $SNOWFLAKE_USER -r ACCOUNTADMIN -w SMDH_WH \
+  -q "CALL SMDH_INFRASTRUCTURE.TENANT_CONFIGS.SP_GRANT_OPENFLOW_TENANT_ACCESS('$TENANT_ID');"
+```
+
+### Phase 7: Add Kinesis Connector (Snowsight UI)
+
+After deploying tenant infrastructure, add the Kinesis connector in Snowsight:
+
+1. In Snowsight → **Ingestion** → **Openflow** → **Runtimes**
+2. Click on `smdh-kinesis-runtime`
+3. Click **Add Connector** → **Kinesis Data Streams: JSON modularized**
+4. **Enter the process group** by double-clicking it
+
+5. Configure **AWSCredentialsProviderControllerService** (Access Keys Required):
+
+   | Parameter | Value |
+   |-----------|-------|
+   | AWS Access Key ID | Create IAM user access key (see below) |
+   | AWS Secret Access Key | Create IAM user access key (see below) |
+
+   > **IMPORTANT**: Openflow Kinesis connector does NOT support IAM Role Assumption. You must create a dedicated IAM user with access keys:
+   > ```bash
+   > aws iam create-user --user-name smdh-openflow-kinesis-user
+   > aws iam create-access-key --user-name smdh-openflow-kinesis-user
+   > ```
+   > Attach the policy from `docs/deployment/Openflow_Kinesis_Configuration_Guide.md`
+
+6. Configure **Kinesis Source Parameters**:
+
+   | Parameter | Value |
+   |-----------|-------|
+   | AWS Region | `eu-west-2` |
+   | Stream Name | `smdh-mycompany-stream` |
+   | Application Name | `smdh-openflow-mycompany` |
+   | Initial Position | `TRIM_HORIZON` (all data) or `LATEST` (new only) |
+   | **Consumer Type** | **`POLLING` (Shared Throughput)** |
+   | Metrics Publishing | `Disabled` |
+
+   > **CRITICAL**: Consumer Type MUST be set to `POLLING` (Shared Throughput). Enhanced Fan-Out causes `InterruptedException` errors.
+
+7. Configure **Streaming Destination Parameters**:
+
+   | Parameter | Value |
+   |-----------|-------|
+   | Snowflake Account | `<org>-<account>` (e.g., `qqoylnv-zy42691`) |
+   | Database | `SMDH_TENANT_MYCOMPANY` |
+   | Schema | `RAW` |
+   | **Authentication Strategy** | **`SNOWFLAKE_SESSION_TOKEN`** |
+   | Role | `OPENFLOW_RUNTIME_ROLE_KINESIS` |
+   | Warehouse | `SMDH_WH` |
+
+   > **IMPORTANT**: Use `SNOWFLAKE_SESSION_TOKEN` authentication. Do NOT configure private key authentication.
+
+8. Configure **Controller Services**:
+   - **Disable** the `StandardPrivateKeyService` (not needed for session token auth)
+   - **Enable** all other Controller Services in dependency order
+
+9. **Start** the flow from the parent process group
+
+See full configuration guide: [Openflow_Kinesis_Configuration_Guide.md](docs/deployment/Openflow_Kinesis_Configuration_Guide.md)
+
+### Phase 8: Deploy Data Routing Task
+
+After Openflow is configured and data is flowing, deploy the data routing task to distribute data to typed sensor tables:
+
+```bash
+cd infrastructure/snowflake/sql/tenant
+
+# Deploy routing task for tenant
+snowsql -a <account> -u <user> -r ACCOUNTADMIN -w SMDH_WH \
+  -f 14_create_routing_task.sql \
+  --variable tenant_id='mycompany'
+```
+
+**What this creates:**
+- `OPENFLOW_LANDING_STREAM` - CDC stream on Openflow landing table
+- `TASK_ROUTE_SENSOR_DATA` - Runs every minute to route data
+- `sp_route_sensor_data()` - Routing procedure
+- `sp_backfill_typed_tables()` - Backfill historical data
+
+**Data Routing Flow:**
+```
+Openflow Landing Table ("SMDH-{TENANT}-STREAM")
+          ↓ (Stream + Task every 1 minute)
+    ┌─────┴─────┬──────────────┬──────────────┬──────────────┐
+    ↓           ↓              ↓              ↓              ↓
+SENSOR_     ENVIRONMENTAL_  VIBRATION_     CLAMP_       DEVICE_
+READINGS    SENSOR_READINGS SENSOR_READINGS SENSOR_...  STATUS
+(all data)  (AM308/EM300)   (vibration)    (CT-Clamp)  (status)
+```
+
+**Routing Rules:**
+| Sensor Type | Destination Table | Match Criteria |
+|-------------|------------------|----------------|
+| All | `sensor_readings` | All records (master table) |
+| Environmental | `environmental_sensor_readings` | AM308, EM300, temp/humidity data |
+| Vibration | `vibration_sensor_readings` | `sensorType='vibration'` or device name |
+| Clamp/Power | `clamp_sensor_readings` | `sensorType='clamp_current'` or CT-Clamp |
+| Device Status | `device_status` | `sensorType='device_status'` or Status- |
+
+**Verify routing is working:**
+```sql
+USE DATABASE SMDH_TENANT_MYCOMPANY;
+
+-- Check record counts
+SELECT 'Landing' AS tbl, COUNT(*) FROM RAW."SMDH-MYCOMPANY-STREAM"
+UNION ALL SELECT 'sensor_readings', COUNT(*) FROM RAW.sensor_readings
+UNION ALL SELECT 'environmental', COUNT(*) FROM RAW.environmental_sensor_readings
+UNION ALL SELECT 'vibration', COUNT(*) FROM RAW.vibration_sensor_readings
+UNION ALL SELECT 'clamp', COUNT(*) FROM RAW.clamp_sensor_readings
+UNION ALL SELECT 'device_status', COUNT(*) FROM RAW.device_status;
+
+-- Check task status
+SELECT name, state FROM TABLE(INFORMATION_SCHEMA.TASK_HISTORY())
+WHERE name = 'TASK_ROUTE_SENSOR_DATA'
+ORDER BY scheduled_time DESC LIMIT 5;
+```
+
+### Phase 9: Configure Gateway
 
 1. Access your Milesight UG65 gateway web interface
 2. Configure the built-in Network Server or connect to ChirpStack
@@ -446,14 +791,18 @@ For a deployment with 30 tenants and ~26M messages/day:
    aws iot get-topic-rule --rule-name smdh_route_{tenant_id}
    ```
 
-3. Check Kinesis stream:
+3. Check per-tenant Kinesis stream:
    ```bash
-   aws kinesis describe-stream --stream-name smdh-sensor-data-stream
+   # Each tenant has a dedicated stream: smdh-{tenant_id}-stream
+   aws kinesis describe-stream-summary --stream-name smdh-{tenant_id}-stream
    ```
 
-4. Verify Snowflake pipe status:
+4. Verify Openflow connector status in Snowflake:
    ```sql
-   SELECT SYSTEM$PIPE_STATUS('pipe_name');
+   -- Check Openflow connector ingestion history
+   SELECT * FROM TABLE(INFORMATION_SCHEMA.OPENFLOW_INGESTION_HISTORY())
+   WHERE connector_name = 'smdh-openflow-{tenant_id}'
+   ORDER BY start_time DESC LIMIT 5;
    ```
 
 ### Gateway connection failures

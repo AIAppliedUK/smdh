@@ -376,9 +376,9 @@ echo "  • Set up CloudWatch billing alarms for cost monitoring"
 
 log_section "Additional Cost Breakdown"
 
-echo "Kinesis Data Streams Cost:"
-# Get Kinesis metrics
-KINESIS_STREAM="smdh-sensor-data-stream"
+echo "Kinesis Data Streams Cost (Per-Tenant Stream):"
+# Per-tenant Kinesis stream: smdh-{tenant_id}-stream
+KINESIS_STREAM="smdh-${TENANT_ID}-stream"
 
 KINESIS_RECORDS=$(aws cloudwatch get-metric-statistics \
     --namespace AWS/Kinesis \

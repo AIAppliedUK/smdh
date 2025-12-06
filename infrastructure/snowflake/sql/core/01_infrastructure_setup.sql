@@ -7,6 +7,8 @@
 -- Version: 1.0
 -- ============================================================================
 -- This script creates:
+-- - Resource monitor (smdh_platform_monitor) for cost control
+-- - Warehouse (SMDH_WH) for all operations
 -- - smdh_infrastructure database
 -- - tenant_configs schema (tenant metadata)
 -- - monitoring schema (platform metrics)
@@ -15,6 +17,29 @@
 -- ============================================================================
 
 USE ROLE ACCOUNTADMIN;
+
+-- ============================================================================
+-- 0. Create Resource Monitor and Warehouse (must exist before other operations)
+-- ============================================================================
+
+-- Resource monitor for cost control
+CREATE RESOURCE MONITOR IF NOT EXISTS smdh_platform_monitor
+WITH CREDIT_QUOTA = 1000
+     FREQUENCY = MONTHLY
+     START_TIMESTAMP = IMMEDIATELY;
+
+-- Primary warehouse for all SMDH operations
+CREATE WAREHOUSE IF NOT EXISTS SMDH_WH
+WAREHOUSE_SIZE = 'SMALL'
+WAREHOUSE_TYPE = 'STANDARD'
+AUTO_SUSPEND = 60
+AUTO_RESUME = TRUE
+MIN_CLUSTER_COUNT = 1
+MAX_CLUSTER_COUNT = 3
+SCALING_POLICY = 'STANDARD'
+INITIALLY_SUSPENDED = FALSE
+RESOURCE_MONITOR = smdh_platform_monitor;
+
 USE WAREHOUSE SMDH_WH;
 
 -- Display banner

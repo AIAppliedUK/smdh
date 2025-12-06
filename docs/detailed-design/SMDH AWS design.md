@@ -95,21 +95,42 @@ All sensor data arrives via MQTT through LoRaWAN gateways (e.g., Milesight UG65)
 
 #### 3.1.2 Kinesis Data Streams
 
-Buffers and orders streaming data between IoT Core and Snowflake. Provides temporary storage for high-velocity data streams with guaranteed ordering per partition.
+**Architecture: Per-Tenant Streams**
 
-- IoT Core generates data faster than Snowflake can ingest individual messages
-- Provides replay capability if downstream processing fails with 24-hour retention window
-- Maintains message ordering within tenant partitions
-- Enables multiple consumers (future real-time analytics)
-- On-demand capacity mode auto-scales with message volume
+Each tenant receives their own dedicated Kinesis stream (`smdh-{tenant_id}-stream`). This architecture is REQUIRED because Snowflake Openflow cannot filter records from a shared stream—it consumes ALL records.
+
+**Why per-tenant streams instead of shared stream with partitions:**
+
+| Aspect | Shared Stream (Rejected) | Per-Tenant Streams (Implemented) |
+|--------|--------------------------|----------------------------------|
+| Openflow Compatibility | Cannot filter by partition | Works correctly |
+| Data Isolation | Partition key only | Complete physical isolation |
+| Blast Radius | One failure affects all tenants | Isolated per tenant |
+| Scaling | Shared capacity | Independent per tenant |
+| Cost Visibility | Aggregated | Per-tenant CloudWatch metrics |
+
+**Stream Configuration:**
+
+- Stream naming: `smdh-{tenant_id}-stream` (e.g., `smdh-acme_corp-stream`)
+- Mode: On-demand (auto-scales with throughput)
+- Retention: 24 hours (configurable up to 365 days)
+- Encryption: AWS KMS managed keys
+- Partition key: `{site_id}` for ordering within tenant
+
+**Capabilities:**
+
+- Buffers high-velocity data between IoT Core and Snowflake
+- Provides replay capability if downstream processing fails
+- Maintains message ordering within each tenant's stream (by site_id partition)
+- Enables per-tenant monitoring and alerting
+- On-demand capacity mode auto-scales independently per tenant
 
 **Traceability**
 
 - FR-002: Enables real-time processing pipeline
-- NFR-001: Handles high-throughput streaming data
-- NFR-002: Provides durability with multi-AZ replication
-
-Required when using IoT Core for MQTT ingestion. Optional for HTTP if buffering is needed.
+- FR-004: Enforces tenant isolation at stream level
+- NFR-001: Per-tenant auto-scaling handles variable loads
+- NFR-002: Provides durability with multi-AZ replication per stream
 
 #### 3.1.3 AWS IoT Thing Groups (Device Organization)
 
@@ -244,7 +265,7 @@ Routes and filters MQTT messages from IoT Core to Kinesis. Implements multi-tena
 **Why it's needed:**
 
 - Extracts tenant context from MQTT topic path
-- Routes messages to correct Kinesis partition per tenant
+- Routes messages to tenant's dedicated Kinesis stream
 - Republishes failures to error topics for investigation
 - Reduces dependency on custom processing code
 
@@ -258,20 +279,30 @@ Routes and filters MQTT messages from IoT Core to Kinesis. Implements multi-tena
 
 **Overview:**
 
-Kinesis streams integrate with Snowflake via the Snowflake Openflow Kinesis Connector (native integration). This is an external system to AWS but critical for the complete data pipeline.
+Kinesis streams integrate with Snowflake via the Snowflake Openflow Kinesis Connector. Each tenant requires their own Openflow connector reading from their dedicated Kinesis stream.
+
+**IMPORTANT: Per-Tenant Connector Architecture**
+
+Openflow connectors have a critical limitation: they cannot filter records from a stream. Each connector consumes ALL records from its configured stream. Therefore:
+
+- Each tenant gets a dedicated Kinesis stream: `smdh-{tenant_id}-stream`
+- Each tenant gets a dedicated Openflow connector
+- Each connector writes to the tenant's isolated database
+- All connectors share a single Openflow Runtime (cost-efficient)
 
 **Integration Requirements:**
 
 - Snowflake account must exist in eu-west-2 (same region as Kinesis)
-- Cross-account IAM role configured in AWS to allow Snowflake to read from Kinesis
-- Openflow connector configured per tenant to route Kinesis streams to Snowflake databases
-- Each tenant gets isolated database: `smdh_tenant_{tenant_id}`
+- Cross-account IAM role with wildcard access to `smdh-*-stream` pattern
+- Openflow Runtime shared across all connectors
+- One Openflow Connector per tenant (created via Snowsight UI)
 
 **Key AWS Configuration for Snowflake Integration:**
 
-1. **IAM Role** for Snowflake Openflow connector
-   - Allows Snowflake to assume role and read Kinesis streams
-   - Restricts access to specific Kinesis streams only
+1. **IAM Role** for Snowflake Openflow
+   - Role: `smdh-snowflake-kinesis-role`
+   - Allows Snowflake to assume role and read from any tenant stream
+   - Policy grants access to: `arn:aws:kinesis:eu-west-2:*:stream/smdh-*-stream`
    - External ID required for security
 
 2. **Secrets Manager Secret**
@@ -279,20 +310,80 @@ Kinesis streams integrate with Snowflake via the Snowflake Openflow Kinesis Conn
    - Used by Snowflake to sign requests to Kinesis
    - Automatic rotation before expiry
 
-3. **Kinesis Stream Naming**
-   - Stream: `smdh-sensor-data-stream`
-   - Partitioned by `{tenant_id}` to route messages to correct tenant database
-   - On-demand capacity scales automatically with message volume
+3. **Kinesis Stream Naming (Per-Tenant)**
+   - Pattern: `smdh-{tenant_id}-stream`
+   - Examples: `smdh-acme_corp-stream`, `smdh-globex-stream`
+   - Each stream created by Terraform tenant module
+   - On-demand capacity scales automatically per tenant
+
+4. **Openflow Connector Configuration (Per-Tenant)**
+
+   | Setting | Value |
+   |---------|-------|
+   | Stream Name | `smdh-{tenant_id}-stream` |
+   | Application Name | `smdh-openflow-{tenant_id}` |
+   | Target Database | `SMDH_TENANT_{TENANT_ID}` |
+   | Target Schema | `RAW` |
+   | Target Table | `SENSOR_READINGS` |
 
 **Traceability**
 
 - FR-002: Real-time data flow from Kinesis to Snowflake
-- FR-004: Tenant isolation enforced via partition keys
-- NFR-002: High availability via multi-AZ Kinesis replication
+- FR-004: Tenant isolation enforced via dedicated streams and connectors
+- NFR-002: High availability via multi-AZ Kinesis replication per tenant
 
-### 3.4 Supporting Services
+### 3.4 Openflow Multi-Connector Architecture
 
-#### 3.4.1 AWS Secrets Manager
+**Why Multiple Connectors?**
+
+Snowflake Openflow Kinesis connectors have no filtering capability. Each connector consumes 100% of records from its configured stream. This architectural constraint requires:
+
+1. **One Kinesis stream per tenant** — Data isolation at the stream level
+2. **One Openflow connector per tenant** — Each connector reads from one stream
+3. **Shared Openflow Runtime** — Single runtime hosts all connectors (cost-efficient)
+
+**Architecture:**
+
+```
+Tenant A: IoT Rule → smdh-acme_corp-stream → Openflow Connector A → SMDH_TENANT_ACME_CORP
+Tenant B: IoT Rule → smdh-globex-stream    → Openflow Connector B → SMDH_TENANT_GLOBEX
+Tenant C: IoT Rule → smdh-initech-stream   → Openflow Connector C → SMDH_TENANT_INITECH
+                                              ↑
+                                    Shared: smdh-kinesis-runtime
+```
+
+**Connector Lifecycle:**
+
+| Event | Action |
+|-------|--------|
+| New tenant onboarded | Create stream (Terraform) + Create connector (Snowsight UI) |
+| Tenant scales up | Kinesis auto-scales (on-demand mode) |
+| Tenant offboarded | Stop connector → Delete stream |
+
+**Monitoring:**
+
+Each connector reports metrics independently:
+- Records processed per connector
+- Lag per tenant stream
+- Errors per tenant
+
+Query connector status:
+```sql
+SELECT * FROM TABLE(INFORMATION_SCHEMA.OPENFLOW_INGESTION_HISTORY())
+WHERE connector_name LIKE 'smdh-openflow-%';
+```
+
+**Why not a single shared stream?**
+
+| Approach | Problem |
+|----------|---------|
+| Single stream, single connector | All tenant data goes to one table—no isolation |
+| Single stream, multiple connectors | Each connector gets ALL records from ALL tenants—wasteful and insecure |
+| **Per-tenant streams (chosen)** | Each connector reads only its tenant's data—correct isolation |
+
+### 3.5 Supporting Services
+
+#### 3.5.1 AWS Secrets Manager
 
 Securely stores and rotates sensitive credentials like Snowflake private keys, API keys, and connection strings.
 
@@ -306,7 +397,7 @@ Securely stores and rotates sensitive credentials like Snowflake private keys, A
 - NFR-003: Secure credential management
 - NFR-005: Automated rotation reduces operational burden
 
-#### 3.4.2 CloudWatch
+#### 3.5.2 CloudWatch
 
 Centralised monitoring and logging for all AWS services. Collects metrics, stores logs, and triggers alarms.
 
@@ -359,19 +450,21 @@ Centralised monitoring and logging for all AWS services. Collects metrics, store
       Topic: smdh/{tenant_id}/sensor-data
       Authentication: X.509 certificate (gateway holds cert)
 
-4. IoT Rules Engine Routing
-   └─ SQL: SELECT *, '{tenant_id}' as tenant_id FROM 'smdh/+/+'
-   └─ Validates message structure
-   └─ Routes to Kinesis with tenant partition key
+4. IoT Rules Engine Routing (Per-Tenant Rule)
+   └─ Rule name: smdh_route_{tenant_id}
+   └─ SQL: SELECT *, topic(2) as tenant_id, topic(3) as site_id,
+           timestamp() as iot_timestamp FROM 'smdh/{tenant_id}/+/sensor-data'
+   └─ Routes to tenant's dedicated Kinesis stream
 
-5. Kinesis Buffering & Ordering
-   └─ Partition: {tenant_id}
-   └─ Guarantees: In-order delivery per tenant, 24h retention
-   └─ Throughput: On-demand, auto-scales with message volume
+5. Per-Tenant Kinesis Stream
+   └─ Stream: smdh-{tenant_id}-stream
+   └─ Partition key: {site_id} (ordering within tenant)
+   └─ Guarantees: In-order delivery per site, 24h retention
+   └─ Throughput: On-demand, auto-scales per tenant
 
-6. Snowflake Openflow Integration
-   └─ Native Kinesis connector (preview feature)
-   └─ Reads from Kinesis stream
+6. Snowflake Openflow Connector (Per-Tenant)
+   └─ Each tenant has dedicated connector
+   └─ Reads from tenant's stream only (no filtering needed)
    └─ Writes to smdh_tenant_{tenant_id}.raw.sensor_readings
    └─ Latency: 5-15 seconds end-to-end
 
@@ -392,8 +485,9 @@ Centralised monitoring and logging for all AWS services. Collects metrics, store
 - LoRaWAN provides long-range, low-power sensor connectivity
 - Gateways handle all X.509 authentication (sensors cannot store certs)
 - Persistent gateway connections handle continuous sensor streams
-- Topic-based routing inherently multi-tenant
-- Kinesis provides buffering without custom code
+- Per-tenant IoT Rules route to dedicated Kinesis streams
+- Per-tenant Kinesis streams enable Openflow data isolation
+- Per-tenant Openflow connectors write to isolated databases
 - No Lambda/validation layers = lower latency and cost
 
 ---
@@ -407,8 +501,9 @@ Centralised monitoring and logging for all AWS services. Collects metrics, store
 | **Device Level**      | Separate X.509 certificates per gateway       | Prevents device spoofing, enables revocation       |
 | **Thing Group Level** | Hierarchical thing groups per tenant/site     | Organizational isolation, bulk operations per tenant |
 | **Topic Level**       | Topic ACLs enforce `smdh/{tenant_id}/*` path  | Prevents cross-tenant topic access at IoT Core    |
-| **Rules Level**       | IoT Rules extract tenant from topic            | Validates tenant context before Kinesis routing    |
-| **Partition Level**   | Kinesis partitioned by {tenant_id}             | In-order delivery, isolation per tenant            |
+| **Rules Level**       | Per-tenant IoT Rule routes to dedicated stream | Each tenant's data goes to their own Kinesis stream |
+| **Stream Level**      | Dedicated Kinesis stream per tenant            | Complete physical isolation, independent scaling   |
+| **Connector Level**   | Per-tenant Openflow connector                  | Each connector reads only its tenant's stream      |
 | **Database Level**    | Separate database per tenant in Snowflake      | Complete storage isolation                         |
 | **Application Level** | Role-based access control in Snowflake         | Users only see their tenant's data                 |
 
@@ -725,6 +820,7 @@ The architecture supports future changes through:
 | -------------------------- | ------------------------ | ---------------------- | ---------------------------------------------- |
 | **MQTT Broker**            | AWS IoT Core             | EMQ X, Mosquitto       | Fully managed, scales to millions, native AWS  |
 | **Stream Processing**      | Kinesis (on-demand)      | Kafka/MSK, SQS         | Native integration, no cluster management      |
+| **Kinesis Architecture**   | Per-tenant streams       | Shared stream + partitions | Openflow cannot filter; per-tenant streams required for isolation |
 | **Data Warehouse**         | Snowflake                | Redshift, BigQuery     | Superior semi-structured data handling         |
 | **Web Framework**          | Streamlit in Snowflake   | React + ECS            | Faster development, no separate infrastructure |
 | **Multi-tenancy**          | Database-per-tenant      | Row-level security     | Stronger isolation, simpler operations         |
@@ -874,15 +970,22 @@ Critical: No cross-tenant topic access
 
 ```
 Component: AWS IoT Rules Engine
-Purpose: Route tenant data to correct stream
+Purpose: Route tenant data to tenant's dedicated Kinesis stream
 
 Rule Name: smdh_route_company_a
-SQL: SELECT *, 'company_a' as tenant_id
-     FROM 'smdh/company_a/+'
+SQL: SELECT *,
+     'company_a' as tenant_id,
+     topic(3) as site_id,
+     timestamp() as iot_timestamp
+     FROM 'smdh/company_a/+/sensor-data'
      WHERE timestamp IS NOT NULL
 Action:
-- Kinesis: Put to partition key 'company_a'
+- Kinesis: Put to stream 'smdh-company_a-stream'
+- Partition Key: ${topic(3)} (site_id for ordering within tenant)
 - Error Action: Republish to smdh/company_a/errors
+
+Note: Each tenant gets a dedicated Kinesis stream because Openflow
+connectors cannot filter records from a shared stream.
 ```
 
 **Step 2.6: Verify Thing Group Configuration**
@@ -1083,6 +1186,46 @@ FROM smdh_tenant_company_a.normalized.sensor_metrics
 GROUP BY machine_id, hour;
 ```
 
+**Step 3.7: Configure Openflow Kinesis Connector**
+
+```
+Component: Snowflake Openflow
+Purpose: Stream data from tenant's Kinesis stream to Snowflake
+
+IMPORTANT: Each tenant requires a dedicated Openflow connector because
+Openflow cannot filter records from a shared stream.
+
+Prerequisites:
+- Openflow Runtime exists (smdh-kinesis-runtime) - created once
+- IAM role allows Snowflake to read from smdh-*-stream pattern
+- Tenant database and RAW.SENSOR_READINGS table exist
+
+Create connector in Snowsight UI:
+1. Navigate to Data > Add Data > Ingest from Kinesis Stream
+2. Runtime: Select 'smdh-kinesis-runtime'
+3. Connection: Use existing 'smdh-kinesis-connection'
+4. Stream Name: smdh-company_a-stream
+5. Application Name: smdh-openflow-company_a
+6. Target Database: SMDH_TENANT_COMPANY_A
+7. Target Schema: RAW
+8. Target Table: SENSOR_READINGS
+9. Start Position: LATEST (or TRIM_HORIZON for replay)
+
+Verify connector status:
+SELECT * FROM TABLE(INFORMATION_SCHEMA.OPENFLOW_INGESTION_HISTORY())
+WHERE connector_name = 'smdh-openflow-company_a'
+ORDER BY start_time DESC;
+
+Monitor lag:
+SELECT
+  connector_name,
+  records_processed,
+  bytes_processed,
+  current_lag_seconds
+FROM TABLE(INFORMATION_SCHEMA.OPENFLOW_CONNECTOR_STATUS())
+WHERE connector_name = 'smdh-openflow-company_a';
+```
+
 #### Phase 4: Streamlit Portal Configuration
 
 **Step 4.1: Tenant Configuration File**
@@ -1214,7 +1357,7 @@ The gateway aggregates all LoRaWAN uplinks and publishes via MQTT.
 | **Message Ingestion**     | Send test message from gateway              | Message appears in Snowflake within 30s |
 | **Tenant Topic ACLs**     | Try to publish to another tenant's topic    | Access denied (403 error)               |
 | **LoRaWAN Sensor Join**   | Register DevTank OSM with gateway NS        | OTAA join succeeds, uplinks received    |
-| **Data Routing**          | Verify data in correct Kinesis partition    | Partition key matches tenant_id         |
+| **Data Routing**          | Verify data in tenant's Kinesis stream      | Data in smdh-{tenant_id}-stream         |
 | **User Access**           | Login to Streamlit portal with SSO          | Only see company_a data                 |
 | **Certificate Rotation**  | Trigger cert rotation via Secrets Manager   | New cert deployed, old connections drop |
 | **Monitoring**            | Generate IoT error (bad topic)              | Alert received via SNS within 5 min     |

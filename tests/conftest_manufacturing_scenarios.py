@@ -25,7 +25,7 @@ class ManufacturingFacility:
         self.tenant_name = tenant_name
         self.sites: Dict[str, 'ManufactoringSite'] = {}
 
-    def add_site(self, site_id: str, site_name: str, site: 'ManufactoringSite'):
+    def add_site(self, site_id: str, site: 'ManufactoringSite'):
         """Add a manufacturing site to the facility"""
         self.sites[site_id] = site
 

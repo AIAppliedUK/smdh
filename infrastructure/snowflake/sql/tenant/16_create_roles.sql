@@ -79,6 +79,9 @@ GRANT SELECT ON ALL VIEWS IN SCHEMA analytics TO ROLE IDENTIFIER($data_engineer_
 -- Grant warehouse access
 GRANT USAGE ON WAREHOUSE SMDH_WH TO ROLE IDENTIFIER($data_engineer_role);
 
+-- Grant access to SNOWFLAKE.ACCOUNT_USAGE for monitoring views
+GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE IDENTIFIER($data_engineer_role);
+
 GRANT ROLE IDENTIFIER($data_engineer_role) TO ROLE SYSADMIN;
 
 SELECT 'Created role: ' || $data_engineer_role AS result;
@@ -180,6 +183,9 @@ GRANT MONITOR ON DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($auditor
 
 -- Grant warehouse access
 GRANT USAGE ON WAREHOUSE SMDH_WH TO ROLE IDENTIFIER($auditor_role);
+
+-- Grant access to SNOWFLAKE.ACCOUNT_USAGE for compliance monitoring
+GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE IDENTIFIER($auditor_role);
 
 GRANT ROLE IDENTIFIER($auditor_role) TO ROLE SYSADMIN;
 

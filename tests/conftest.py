@@ -15,7 +15,10 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any, Generator
 import logging
 
-# Import manufacturing scenario fixtures
+# Register manufacturing scenario fixtures with pytest
+pytest_plugins = ['tests.conftest_manufacturing_scenarios']
+
+# Import classes for use in tests (fixtures are registered via pytest_plugins)
 try:
     from .conftest_manufacturing_scenarios import (
         ManufacturingFacility,
@@ -25,15 +28,11 @@ try:
         Sensor,
         EnvironmentalZone,
         RealisticManufacturingSimulator,
-        realistic_facility,
-        manufacturing_simulator,
-        multi_day_sensor_data,
-        realistic_site_config
     )
 except ImportError:
     # If manufacturing scenarios not available, that's ok - tests will skip if needed
     logger = logging.getLogger(__name__)
-    logger.debug("Manufacturing scenario fixtures not imported (module may not be available)")
+    logger.debug("Manufacturing scenario classes not imported (module may not be available)")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -351,13 +350,15 @@ def sql_insert_clamp_reading(sf_connection) -> callable:
         try:
             cursor = sf_connection.cursor()
 
+            # Note: PARSE_JSON cannot be used in VALUES clause - use INSERT...SELECT
             sql = f"""
             INSERT INTO RAW.CLAMP_SENSOR_READINGS (
                 reading_id, tenant_id, machine_id, sensor_id, timestamp,
                 current_phase_a, current_phase_b, current_phase_c, current_rms,
                 voltage_phase_a, voltage_phase_b, voltage_phase_c,
                 power_factor, frequency, raw_payload
-            ) VALUES (
+            )
+            SELECT
                 '{reading['reading_id']}',
                 '{reading['tenant_id']}',
                 '{reading['machine_id']}',
@@ -373,7 +374,6 @@ def sql_insert_clamp_reading(sf_connection) -> callable:
                 {reading['power_factor']},
                 {reading['frequency']},
                 PARSE_JSON('{json.dumps(reading["raw_payload"])}')
-            )
             """
 
             cursor.execute(sql)

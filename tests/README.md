@@ -7,7 +7,9 @@ Complete testing toolkit for validating data transmission from devices to the AW
 ```
 tests/
 ├── device-simulators/     # IoT device simulation tools
-│   └── test-iot-transmission.py
+│   ├── ug65_e2e_test.py              # UG65 LoRaWAN format E2E test (recommended)
+│   ├── realistic_facility_simulator.py  # Full manufacturing facility simulation
+│   └── test-iot-transmission.py      # Generic IoT device simulator
 ├── scripts/              # Bash utility scripts
 │   ├── mqtt-quick-test.sh
 │   └── cert-helper.sh
@@ -25,6 +27,8 @@ tests/
 
 | File | Location | Purpose | Type |
 |------|----------|---------|------|
+| `ug65_e2e_test.py` | `device-simulators/` | UG65 LoRaWAN gateway format E2E test | Python/MQTT |
+| `realistic_facility_simulator.py` | `device-simulators/` | Full manufacturing facility simulation | Python/MQTT |
 | `test-iot-transmission.py` | `device-simulators/` | Full-featured Python IoT device simulator | Python/MQTT |
 | `mqtt-quick-test.sh` | `scripts/` | Lightweight bash script for quick MQTT tests | Bash/mosquitto |
 | `smdh-iot-postman-collection.json` | `api-testing/` | REST API testing collection | Postman |
@@ -74,7 +78,80 @@ aws iot describe-endpoint --endpoint-type iot:Data-ATS --region eu-west-1
 
 ## 🧪 Testing Methods
 
-### Method 1: Python Device Simulator (Recommended)
+### Method 1: UG65 E2E Test (Recommended for Full Pipeline)
+
+The recommended test for validating the complete IoT → Kinesis → Openflow → Snowflake pipeline:
+
+```bash
+cd device-simulators
+
+# Basic test - sends 5 UG65-formatted messages via MQTT
+python ug65_e2e_test.py \
+    --tenant-id test_tenant \
+    --site-id SITE_001 \
+    --count 5
+
+# Extended test with custom certificate paths
+python ug65_e2e_test.py \
+    --tenant-id test_tenant \
+    --site-id SITE_001 \
+    --count 20 \
+    --interval 2 \
+    --cert path/to/cert.pem \
+    --key path/to/key.pem
+```
+
+**Message Format:** Follows the Milesight UG65 LoRaWAN gateway MQTT integration spec:
+
+```json
+{
+  "applicationId": "smdh",
+  "deviceEUI": "24E124707E043923",
+  "deviceName": "AM308-TempHumidity-Floor1",
+  "time": "2025-12-05T10:30:00.123Z",
+  "fPort": 85,
+  "fCntUp": 1001,
+  "adr": true,
+  "confirmedUplink": false,
+  "data": {
+    "temperature": 22.5,
+    "humidity": 48.2,
+    "co2": 520,
+    "battery": 85
+  },
+  "rx": {
+    "gatewayEUI": "24E124FFFEF35F39",
+    "frequency": 868.1,
+    "dataRate": "SF9BW125",
+    "rssi": -102,
+    "snr": 5.2
+  }
+}
+```
+
+**Simulated Sensors:**
+- AM308 environmental (temperature, humidity, CO2, battery)
+- EM300-TH temperature/humidity
+- VS121 people counter
+- WS303 water leak detector
+
+**Verify in Snowflake:**
+
+```sql
+USE DATABASE SMDH_TENANT_TEST_TENANT;
+
+-- Check data arrived in typed tables
+SELECT 'sensor_readings' AS tbl, COUNT(*) FROM RAW.SENSOR_READINGS
+UNION ALL SELECT 'environmental', COUNT(*) FROM RAW.ENVIRONMENTAL_READINGS
+UNION ALL SELECT 'device_status', COUNT(*) FROM RAW.DEVICE_STATUS;
+
+-- View recent data
+SELECT * FROM RAW.SENSOR_READINGS
+WHERE ingestion_timestamp >= DATEADD(MINUTE, -10, CURRENT_TIMESTAMP())
+ORDER BY ingestion_timestamp DESC;
+```
+
+### Method 2: Python Device Simulator (Generic)
 
 The most comprehensive testing tool with realistic sensor data generation:
 

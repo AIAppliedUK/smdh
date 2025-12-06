@@ -14,6 +14,7 @@
 -- - Tenant-specific database (smdh_tenant_{tenant_id})
 -- - Four schemas: raw, normalized, aggregated, analytics
 -- - Registers tenant in infrastructure database
+-- - Grants Openflow access for Kinesis ingestion
 -- ============================================================================
 
 -- Enable SnowSQL variable substitution
@@ -110,7 +111,12 @@ CREATE SCHEMA IF NOT EXISTS analytics
     DATA_RETENTION_TIME_IN_DAYS = 30
     COMMENT = 'Analytics views, ML model results, and business intelligence objects.';
 
-SELECT 'Created schemas: raw, normalized, aggregated, analytics' AS result;
+-- Data mart schema for dimensional modeling and business facts
+CREATE SCHEMA IF NOT EXISTS mart
+    DATA_RETENTION_TIME_IN_DAYS = 90
+    COMMENT = 'Data mart layer with dimensional models, fact tables, and business KPIs. Optimized for BI and reporting.';
+
+SELECT 'Created schemas: raw, normalized, aggregated, analytics, mart' AS result;
 
 -- ============================================================================
 -- 4. Register Tenant in Infrastructure Database
@@ -264,6 +270,9 @@ GRANT ALL ON FUTURE VIEWS IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIF
 GRANT ALL ON ALL STAGES IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($admin_role_name);
 GRANT ALL ON FUTURE STAGES IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($admin_role_name);
 
+-- Grant access to SNOWFLAKE.ACCOUNT_USAGE for monitoring views
+GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE IDENTIFIER($admin_role_name);
+
 -- User role: Read/write access (no DDL)
 GRANT USAGE ON DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($user_role_name);
 GRANT USAGE ON ALL SCHEMAS IN DATABASE IDENTIFIER($database_name) TO ROLE IDENTIFIER($user_role_name);
@@ -360,7 +369,7 @@ WHERE tenant_id = $tenant_id;
 
 SELECT '╔════════════════════════════════════════════════════════════════╗' AS summary
 UNION ALL SELECT '║  Tenant Database Creation Complete                         ║'
-UNION ALL SELECT '╚════════════════════════════════════════════════════════════╝'
+UNION ALL SELECT '╚════════════════════════════════════════════════════════════════╝'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Tenant Details:'
 UNION ALL SELECT '  • Tenant ID: ' || $tenant_id
@@ -376,6 +385,7 @@ UNION ALL SELECT '  [OK] File Formats: ff_json, ff_csv, ff_parquet'
 UNION ALL SELECT '  [OK] Stages: stage_uploads, stage_errors'
 UNION ALL SELECT '  [OK] Roles: _admin, _user, _readonly'
 UNION ALL SELECT '  [OK] Metadata: tenant_metadata table'
+UNION ALL SELECT '  [OK] Registered in tenant registry'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Next Steps:'
 UNION ALL SELECT '  1. Run 11_create_schemas.sql (if not auto-included)'

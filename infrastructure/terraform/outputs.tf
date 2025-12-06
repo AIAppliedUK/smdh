@@ -1,5 +1,9 @@
 # SMDH Terraform Outputs
 # Export important values for use by other systems and documentation
+#
+# ARCHITECTURE NOTE: Per-Tenant Kinesis Streams
+# Each tenant has their own Kinesis stream (smdh-{tenant_id}-stream).
+# Stream details are exported per-tenant, not as a shared resource.
 
 output "iot_endpoint" {
   description = "AWS IoT Core endpoint for MQTT connections"
@@ -11,14 +15,15 @@ output "iot_endpoint_address" {
   value       = module.iot_core.iot_endpoint_address
 }
 
-output "kinesis_stream_name" {
-  description = "Name of the Kinesis data stream"
-  value       = module.kinesis.stream_name
-}
-
-output "kinesis_stream_arn" {
-  description = "ARN of the Kinesis data stream"
-  value       = module.kinesis.stream_arn
+# Per-tenant Kinesis stream outputs
+output "tenant_kinesis_streams" {
+  description = "Kinesis stream details for each tenant"
+  value = {
+    for tenant_id, tenant_config in module.tenants : tenant_id => {
+      stream_name = tenant_config.kinesis_stream_name
+      stream_arn  = tenant_config.kinesis_stream_arn
+    }
+  }
 }
 
 output "snowflake_iam_role_arn" {
@@ -56,6 +61,9 @@ output "tenant_configurations" {
       tenant_thing_group_arn   = tenant_config.tenant_thing_group_arn
       site_thing_groups        = tenant_config.site_thing_group_names
       num_sites                = length(tenant_config.site_thing_group_names)
+      # Per-tenant Kinesis stream
+      kinesis_stream_name      = tenant_config.kinesis_stream_name
+      kinesis_stream_arn       = tenant_config.kinesis_stream_arn
     }
   }
   sensitive = true
@@ -76,7 +84,7 @@ output "deployment_summary" {
     aws_region            = var.aws_region
     environment           = var.environment
     iot_endpoint          = module.iot_core.iot_endpoint
-    kinesis_stream        = module.kinesis.stream_name
+    kinesis_architecture  = "per-tenant streams (smdh-{tenant_id}-stream)"
     tenant_count          = length(var.tenants)
     monitoring_enabled    = var.enable_monitoring
     deletion_protection   = var.enable_deletion_protection
@@ -110,6 +118,37 @@ output "site_device_mapping" {
 }
 
 # ============================================================================
+# Openflow Configuration Outputs
+# ============================================================================
+
+output "openflow_aws_credentials_config" {
+  description = "Configuration for Openflow AWSCredentialsProviderControllerService (role assumption)"
+  value = {
+    assume_role_arn         = module.iam.snowflake_role_arn
+    assume_role_external_id = var.snowflake_external_id
+    assume_role_sts_region  = var.aws_region
+    use_default_credentials = false
+    instructions            = "Configure these values in the AWSCredentialsProviderControllerService in Openflow"
+  }
+  sensitive = true
+}
+
+output "openflow_kinesis_config_per_tenant" {
+  description = "Per-tenant Kinesis connector configuration for Openflow"
+  value = {
+    for tenant_id, tenant_config in module.tenants : tenant_id => {
+      kinesis_stream_name     = tenant_config.kinesis_stream_name
+      kinesis_stream_arn      = tenant_config.kinesis_stream_arn
+      aws_region              = var.aws_region
+      kinesis_application_name = "smdh-openflow-${tenant_id}"
+      target_database         = "SMDH_TENANT_${upper(replace(tenant_id, "-", "_"))}"
+      target_schema           = "RAW"
+      target_table            = "SENSOR_READINGS"
+    }
+  }
+}
+
+# ============================================================================
 # Snowflake Integration Outputs
 # ============================================================================
 
@@ -122,7 +161,11 @@ output "snowflake_sync_data" {
       tenant_thing_group_arn   = tenant_config.tenant_thing_group_arn
       aws_region               = var.aws_region
       iot_endpoint             = module.iot_core.iot_endpoint
-      kinesis_stream_name      = module.kinesis.stream_name
+      # Per-tenant Kinesis stream
+      kinesis_stream_name      = tenant_config.kinesis_stream_name
+      kinesis_stream_arn       = tenant_config.kinesis_stream_arn
+      # Openflow connector config
+      openflow_config          = tenant_config.kinesis_stream_config
       sites = {
         for site_id, group_name in tenant_config.site_thing_group_names : site_id => {
           site_thing_group_name = group_name
@@ -141,7 +184,6 @@ output "configuration_json" {
     aws_account_id    = data.aws_caller_identity.current.account_id
     aws_region        = var.aws_region
     iot_endpoint      = module.iot_core.iot_endpoint
-    kinesis_stream    = module.kinesis.stream_name
     tenants           = {
       for tenant_id, tenant_config in module.tenants : tenant_id => {
         policy_name              = tenant_config.policy_name
@@ -151,6 +193,10 @@ output "configuration_json" {
         site_thing_groups        = tenant_config.site_thing_group_names
         disconnected_group       = tenant_config.disconnected_devices_group_name
         active_devices_group     = tenant_config.active_devices_group_name
+        # Per-tenant Kinesis stream
+        kinesis_stream_name      = tenant_config.kinesis_stream_name
+        kinesis_stream_arn       = tenant_config.kinesis_stream_arn
+        openflow_config          = tenant_config.kinesis_stream_config
       }
     }
   })

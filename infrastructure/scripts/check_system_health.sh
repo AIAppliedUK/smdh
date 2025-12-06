@@ -317,30 +317,31 @@ else
 fi
 
 # ============================================================================
-# Check 5: Kinesis Stream Health
+# Check 5: Kinesis Stream Health (Per-Tenant Streams)
 # ============================================================================
 
 log_section "5. Kinesis Stream Health"
 
-STREAM_NAME="smdh-sensor-data-stream"
+# Per-tenant Kinesis stream: smdh-{tenant_id}-stream
+STREAM_NAME="smdh-${TENANT_ID}-stream"
 
-STREAM_STATUS=$(aws kinesis describe-stream \
+STREAM_STATUS=$(aws kinesis describe-stream-summary \
     --stream-name "$STREAM_NAME" \
     --region "$AWS_REGION" \
-    --query 'StreamDescription.StreamStatus' \
+    --query 'StreamDescriptionSummary.StreamStatus' \
     --output text 2>/dev/null || echo "NOT_FOUND")
 
 if [[ "$STREAM_STATUS" == "ACTIVE" ]]; then
     log_info "Kinesis stream: $STREAM_NAME - ${GREEN}ACTIVE${NC}"
 
-    # Get shard count
-    SHARD_COUNT=$(aws kinesis describe-stream \
+    # Get shard count (on-demand mode)
+    SHARD_COUNT=$(aws kinesis describe-stream-summary \
         --stream-name "$STREAM_NAME" \
         --region "$AWS_REGION" \
-        --query 'StreamDescription.Shards | length(@)' \
+        --query 'StreamDescriptionSummary.OpenShardCount' \
         --output text)
 
-    echo "  Active shards: $SHARD_COUNT"
+    echo "  Open shards: $SHARD_COUNT"
 
     # Get incoming records (last 5 minutes)
     INCOMING_RECORDS=$(aws cloudwatch get-metric-statistics \
@@ -356,6 +357,9 @@ if [[ "$STREAM_STATUS" == "ACTIVE" ]]; then
         --output text 2>/dev/null || echo "0")
 
     echo "  Incoming records (last 5 min): $INCOMING_RECORDS"
+elif [[ "$STREAM_STATUS" == "NOT_FOUND" ]]; then
+    log_warn "Kinesis stream not found: $STREAM_NAME"
+    echo "  (Per-tenant streams are created by Terraform for each tenant)"
 else
     log_error "Kinesis stream status: $STREAM_STATUS"
 fi

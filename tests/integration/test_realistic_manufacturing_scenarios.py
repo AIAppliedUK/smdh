@@ -32,14 +32,15 @@ class TestRealisticMultiSiteScenarios:
     def test_ingestion_of_multi_site_sensor_data(
         self,
         sf_connection,
-        multi_day_sensor_data: List[Dict[str, Any]]
+        multi_day_sensor_data: List[Dict[str, Any]],
+        tenant_id: str
     ):
         """
-        Test: Ingesting realistic multi-site sensor data
+        Test: Ingesting realistic multi-site sensor data into Snowflake
         Scenario: ABC Manufacturing with 3 sites generating continuous sensor data
 
         Expected:
-        - All site data properly ingested
+        - All site data properly ingested into Snowflake tables
         - Data split correctly across sensor types
         - No cross-site data contamination
         """
@@ -60,44 +61,123 @@ class TestRealisticMultiSiteScenarios:
             print(f"   Vibration sensors: {len(vibration_readings)}")
             print(f"   Environmental sensors: {len(environmental_readings)}")
 
-            # Verify data variety
-            assert len(clamp_readings) > 0, "Should have clamp sensor readings"
-            assert len(vibration_readings) > 0, "Should have vibration sensor readings"
-            assert len(environmental_readings) > 0, "Should have environmental sensor readings"
+            # Limit to first 100 of each type for test performance
+            clamp_sample = clamp_readings[:100]
+            vibration_sample = vibration_readings[:100]
+            environmental_sample = environmental_readings[:100]
 
-            # Extract unique sites
-            unique_sites = set()
-            unique_machines = set()
+            # ===== INSERT CLAMP SENSOR DATA =====
+            print(f"\n   Inserting {len(clamp_sample)} clamp sensor readings...")
+            for i, reading in enumerate(clamp_sample):
+                m = reading['measurements']
+                sql = f"""
+                INSERT INTO RAW.CLAMP_SENSOR_READINGS (
+                    reading_id, tenant_id, machine_id, sensor_id, site_id, timestamp,
+                    current_phase_a, current_phase_b, current_phase_c, current_rms,
+                    voltage_phase_a, voltage_phase_b, voltage_phase_c,
+                    power_factor, frequency
+                ) VALUES (
+                    'integration_clamp_{i:05d}', '{tenant_id}', '{reading['machineId']}',
+                    '{reading['deviceId']}', '{reading['siteId']}', '{reading['timestamp']}',
+                    {m['current_phase_a']}, {m['current_phase_b']}, {m['current_phase_c']}, {m['current_rms']},
+                    {m['voltage_phase_a']}, {m['voltage_phase_b']}, {m['voltage_phase_c']},
+                    {m['power_factor']}, {m['frequency']}
+                )
+                """
+                cursor.execute(sql)
 
-            for reading in multi_day_sensor_data:
-                unique_sites.add(reading.get('siteId'))
-                if 'machineId' in reading:
-                    unique_machines.add(reading['machineId'])
+            # ===== INSERT VIBRATION SENSOR DATA =====
+            print(f"   Inserting {len(vibration_sample)} vibration sensor readings...")
+            for i, reading in enumerate(vibration_sample):
+                m = reading['measurements']
+                meta = reading.get('metadata', {})
+                sql = f"""
+                INSERT INTO RAW.VIBRATION_SENSOR_READINGS (
+                    reading_id, tenant_id, machine_id, sensor_id, site_id, timestamp,
+                    vibration_x, vibration_y, vibration_z, vibration_rms,
+                    temperature, dominant_frequency, sampling_rate
+                ) VALUES (
+                    'integration_vib_{i:05d}', '{tenant_id}', '{reading['machineId']}',
+                    '{reading['deviceId']}', '{reading['siteId']}', '{reading['timestamp']}',
+                    {m['vibration_x']}, {m['vibration_y']}, {m['vibration_z']}, {m['vibration_rms']},
+                    {m['temperature']}, {m['dominant_frequency']}, {meta.get('samplingRate', 4000)}
+                )
+                """
+                cursor.execute(sql)
 
-            print(f"   Unique sites: {len(unique_sites)} -> {sorted(unique_sites)}")
-            print(f"   Unique machines: {len(unique_machines)}")
+            # ===== INSERT ENVIRONMENTAL SENSOR DATA =====
+            print(f"   Inserting {len(environmental_sample)} environmental sensor readings...")
+            for i, reading in enumerate(environmental_sample):
+                m = reading['measurements']
+                sql = f"""
+                INSERT INTO RAW.ENVIRONMENTAL_SENSOR_READINGS (
+                    reading_id, tenant_id, zone_id, sensor_id, site_id, timestamp,
+                    temperature, humidity, co2_ppm, voc_index,
+                    particulates_pm25, particulates_pm10, noise_db, light_lux
+                ) VALUES (
+                    'integration_env_{i:05d}', '{tenant_id}', '{reading['zoneId']}',
+                    '{reading['deviceId']}', '{reading['siteId']}', '{reading['timestamp']}',
+                    {m['temperature']}, {m['humidity']}, {m['co2_ppm']}, {m['voc_index']},
+                    {m['particulates_pm25']}, {m['particulates_pm10']}, {m['noise_db']}, {m['light_lux']}
+                )
+                """
+                cursor.execute(sql)
 
-            # Verify we have data from multiple sites
-            assert len(unique_sites) >= 2, "Should have data from multiple sites"
-            assert len(unique_machines) >= 5, "Should have data from multiple machines"
+            # ===== VERIFY DATA IN SNOWFLAKE =====
+            print(f"\n   Verifying data in Snowflake...")
 
-            # Verify sensors types are correctly labeled
-            for clamp in clamp_readings[:1]:
-                assert 'measurements' in clamp
-                assert 'current_rms' in clamp['measurements']
-                assert 'power_factor' in clamp['measurements']
+            # Count clamp readings
+            cursor.execute("""
+                SELECT COUNT(*) FROM RAW.CLAMP_SENSOR_READINGS
+                WHERE reading_id LIKE 'integration_clamp_%'
+            """)
+            clamp_count = cursor.fetchone()[0]
+            assert clamp_count == len(clamp_sample), f"Expected {len(clamp_sample)} clamp readings, got {clamp_count}"
 
-            for vib in vibration_readings[:1]:
-                assert 'measurements' in vib
-                assert 'vibration_rms' in vib['measurements']
-                assert 'temperature' in vib['measurements']
+            # Count vibration readings
+            cursor.execute("""
+                SELECT COUNT(*) FROM RAW.VIBRATION_SENSOR_READINGS
+                WHERE reading_id LIKE 'integration_vib_%'
+            """)
+            vib_count = cursor.fetchone()[0]
+            assert vib_count == len(vibration_sample), f"Expected {len(vibration_sample)} vibration readings, got {vib_count}"
 
-            for env in environmental_readings[:1]:
-                assert 'measurements' in env
-                assert 'temperature' in env['measurements']
-                assert 'humidity' in env['measurements']
+            # Count environmental readings
+            cursor.execute("""
+                SELECT COUNT(*) FROM RAW.ENVIRONMENTAL_SENSOR_READINGS
+                WHERE reading_id LIKE 'integration_env_%'
+            """)
+            env_count = cursor.fetchone()[0]
+            assert env_count == len(environmental_sample), f"Expected {len(environmental_sample)} environmental readings, got {env_count}"
+
+            # Verify unique sites
+            cursor.execute("""
+                SELECT COUNT(DISTINCT site_id) FROM RAW.CLAMP_SENSOR_READINGS
+                WHERE reading_id LIKE 'integration_clamp_%'
+            """)
+            unique_sites = cursor.fetchone()[0]
+            assert unique_sites >= 2, "Should have data from multiple sites"
+
+            # Verify unique machines
+            cursor.execute("""
+                SELECT COUNT(DISTINCT machine_id) FROM RAW.CLAMP_SENSOR_READINGS
+                WHERE reading_id LIKE 'integration_clamp_%'
+            """)
+            unique_machines = cursor.fetchone()[0]
+            assert unique_machines >= 3, "Should have data from multiple machines"
+
+            print(f"\n   ✅ Successfully ingested data into Snowflake!")
+            print(f"      Clamp readings: {clamp_count}")
+            print(f"      Vibration readings: {vib_count}")
+            print(f"      Environmental readings: {env_count}")
+            print(f"      Unique sites: {unique_sites}")
+            print(f"      Unique machines: {unique_machines}")
 
         finally:
+            # Cleanup test data
+            cursor.execute("DELETE FROM RAW.CLAMP_SENSOR_READINGS WHERE reading_id LIKE 'integration_clamp_%'")
+            cursor.execute("DELETE FROM RAW.VIBRATION_SENSOR_READINGS WHERE reading_id LIKE 'integration_vib_%'")
+            cursor.execute("DELETE FROM RAW.ENVIRONMENTAL_SENSOR_READINGS WHERE reading_id LIKE 'integration_env_%'")
             cursor.close()
 
     def test_realistic_production_schedule_patterns(

@@ -1,380 +1,420 @@
 -- ============================================================================
--- SMDH Snowflake Openflow Connector Setup (Kinesis Integration)
+-- SMDH Snowflake Openflow Setup (Kinesis Integration)
 -- ============================================================================
--- Purpose: Configure Snowflake Openflow connector for Kinesis Data Streams
--- Usage: snowsql -f 03_openflow_connector.sql \
---          -D aws_iam_role_arn='<role_arn>' \
---          -D aws_external_id='<external_id>' \
---          -D kinesis_stream_arn='<stream_arn>'
+-- Purpose: Configure Snowflake Openflow for native Kinesis Data Stream ingestion
+-- Usage: snowsql -f 03_openflow_connector.sql
 -- Author: SMDH Platform Team
--- Version: 1.0
+-- Version: 2.0
 -- ============================================================================
 -- Prerequisites:
--- 1. AWS Kinesis Data Stream created in eu-west-2
--- 2. AWS IAM role created with trust relationship to Snowflake
--- 3. IAM role has permissions to read from Kinesis stream
--- 4. External ID configured for secure cross-account access
+-- 1. ACCOUNTADMIN role access
+-- 2. SMDH_WH warehouse created (from 02_shared_resources.sql)
+-- 3. smdh_infrastructure database created (from 01_infrastructure_setup.sql)
+-- ============================================================================
+-- This script creates:
+-- - OPENFLOW_ADMIN role with required privileges
+-- - SMDH_OPENFLOW database, schema, and image repository
+-- - Network rules for AWS Kinesis/DynamoDB access
+-- - External access integration for Openflow
+-- - Runtime roles for Kinesis connector
+-- - Tracking table for Openflow connectors
+-- ============================================================================
+-- IMPORTANT: After running this script, complete these UI steps in Snowsight:
+-- 1. Navigate to Data > Openflow
+-- 2. Create a new Deployment
+-- 3. Create a Runtime using OPENFLOW_RUNTIME_ROLE_KINESIS
+-- 4. Add the Kinesis connector and configure stream parameters
+-- See: docs/deployment/Tenant_Onboarding_Guide.md
 -- ============================================================================
 
--- Enable SnowSQL variable substitution 
-!set variable_substitution=true
-
 USE ROLE ACCOUNTADMIN;
+USE WAREHOUSE SMDH_WH;
 
 -- Display banner
 SELECT '╔════════════════════════════════════════════════════════════════╗' AS banner
-UNION ALL SELECT '║  SMDH Platform - Openflow Kinesis Connector Setup          ║'
-UNION ALL SELECT '╚════════════════════════════════════════════════════════════╝';
+UNION ALL SELECT '║  SMDH Platform - Openflow Kinesis Connector Setup (v2.0)    ║'
+UNION ALL SELECT '╚════════════════════════════════════════════════════════════════╝';
 
 -- ============================================================================
--- Variable Validation
+-- 1. Create Openflow Admin Role
 -- ============================================================================
 
-SELECT '1. Validating Input Parameters...' AS step;
+SELECT '1. Creating Openflow Admin Role...' AS step;
 
--- Variables should be passed via -D flags:
--- aws_iam_role_arn: IAM role ARN from AWS (e.g., arn:aws:iam::123456789012:role/smdh-snowflake-kinesis-role)
--- aws_external_id: External ID for role assumption security
--- kinesis_stream_arn: ARN of Kinesis stream (e.g., arn:aws:kinesis:eu-west-2:123456789012:stream/smdh-sensor-data-stream)
+-- Create the main Openflow admin role
+CREATE ROLE IF NOT EXISTS OPENFLOW_ADMIN
+    COMMENT = 'Administrator role for Snowflake Openflow deployments and runtimes';
 
--- Display parameters (for verification)
-SELECT 'AWS IAM Role ARN: ' || &aws_iam_role_arn AS parameter;
-SELECT 'AWS External ID: ' || &aws_external_id AS parameter;
-SELECT 'Kinesis Stream ARN: ' || &kinesis_stream_arn AS parameter;
+-- Grant ability to create roles (needed for runtime roles)
+GRANT CREATE ROLE ON ACCOUNT TO ROLE OPENFLOW_ADMIN;
 
--- Prompt user to verify
-SELECT 'Please verify the parameters above are correct.' AS verification_prompt;
-SELECT 'Press Ctrl+C to cancel, or press Enter to continue...' AS verification_prompt;
+-- Grant Openflow-specific privileges
+GRANT CREATE OPENFLOW DATA PLANE INTEGRATION ON ACCOUNT TO ROLE OPENFLOW_ADMIN;
+GRANT CREATE OPENFLOW RUNTIME INTEGRATION ON ACCOUNT TO ROLE OPENFLOW_ADMIN;
+
+-- Grant warehouse access
+GRANT USAGE ON WAREHOUSE SMDH_WH TO ROLE OPENFLOW_ADMIN;
+
+-- Grant to current user (adjust as needed)
+-- Note: Replace with appropriate user or role hierarchy
+GRANT ROLE OPENFLOW_ADMIN TO ROLE ACCOUNTADMIN;
+
+SELECT 'Created role: OPENFLOW_ADMIN' AS status;
 
 -- ============================================================================
--- 2. Create AWS IAM Integration (External Stage)
+-- 2. Create Openflow Database and Image Repository
 -- ============================================================================
 
-SELECT '2. Creating AWS IAM Integration for Kinesis Access...' AS step;
+SELECT '2. Creating Openflow Database and Image Repository...' AS step;
 
--- Create storage integration for cross-account access
-CREATE OR REPLACE STORAGE INTEGRATION smdh_kinesis_integration
-    TYPE = EXTERNAL_STAGE
-    STORAGE_PROVIDER = 'S3'
+-- Create Openflow database (required for image repository)
+CREATE DATABASE IF NOT EXISTS SMDH_OPENFLOW
+    DATA_RETENTION_TIME_IN_DAYS = 7
+    COMMENT = 'Snowflake Openflow configuration and image repository';
+
+USE DATABASE SMDH_OPENFLOW;
+
+-- Create schema
+CREATE SCHEMA IF NOT EXISTS OPENFLOW
+    COMMENT = 'Openflow image repository and configuration';
+
+USE SCHEMA OPENFLOW;
+
+-- Create image repository (required for Snowflake Deployments)
+CREATE IMAGE REPOSITORY IF NOT EXISTS OPENFLOW
+    COMMENT = 'Container image repository for Openflow connectors';
+
+-- Grant public access to image repository (required for Openflow)
+GRANT USAGE ON DATABASE SMDH_OPENFLOW TO ROLE PUBLIC;
+GRANT USAGE ON SCHEMA SMDH_OPENFLOW.OPENFLOW TO ROLE PUBLIC;
+GRANT READ ON IMAGE REPOSITORY SMDH_OPENFLOW.OPENFLOW.OPENFLOW TO ROLE PUBLIC;
+
+SELECT 'Created database: SMDH_OPENFLOW with image repository' AS status;
+
+-- ============================================================================
+-- 3. Create Network Rules for AWS Access
+-- ============================================================================
+
+SELECT '3. Creating Network Rules for AWS Kinesis/DynamoDB Access...' AS step;
+
+USE DATABASE SMDH_OPENFLOW;
+USE SCHEMA OPENFLOW;
+
+-- Network rule for AWS Kinesis and DynamoDB access (eu-west-2)
+-- Openflow uses DynamoDB for checkpointing Kinesis stream position
+CREATE OR REPLACE NETWORK RULE OPENFLOW_AWS_EU_WEST_2_RULE
+    MODE = EGRESS
+    TYPE = HOST_PORT
+    VALUE_LIST = (
+        'kinesis.eu-west-2.amazonaws.com:443',
+        'dynamodb.eu-west-2.amazonaws.com:443',
+        'sts.eu-west-2.amazonaws.com:443',
+        'sts.amazonaws.com:443'
+    )
+    COMMENT = 'Network rule for Openflow to access AWS Kinesis and DynamoDB in eu-west-2';
+
+-- Create external access integration
+CREATE OR REPLACE EXTERNAL ACCESS INTEGRATION OPENFLOW_AWS_EAI
+    ALLOWED_NETWORK_RULES = (SMDH_OPENFLOW.OPENFLOW.OPENFLOW_AWS_EU_WEST_2_RULE)
     ENABLED = TRUE
-    STORAGE_AWS_ROLE_ARN = &aws_iam_role_arn
-    STORAGE_AWS_EXTERNAL_ID = &aws_external_id
-    STORAGE_ALLOWED_LOCATIONS = ('*')  -- Kinesis connector doesn't use specific S3 locations
-    COMMENT = 'IAM integration for Snowflake Openflow to access AWS Kinesis Data Streams in eu-west-2.';
+    COMMENT = 'External access integration for Openflow AWS connectivity';
 
--- Describe integration to get Snowflake IAM user ARN and External ID
--- These values must be configured in AWS IAM role trust policy
-DESC INTEGRATION smdh_kinesis_integration;
+SELECT 'Created network rule: OPENFLOW_AWS_EU_WEST_2_RULE' AS status;
+SELECT 'Created external access integration: OPENFLOW_AWS_EAI' AS status;
 
-SELECT '⚠ IMPORTANT: Note the STORAGE_AWS_IAM_USER_ARN and STORAGE_AWS_EXTERNAL_ID from above.' AS important_note;
-SELECT 'Add these to your AWS IAM role trust relationship policy.' AS important_note;
+-- Grant admin access (AFTER creating network rules and integration)
+GRANT OWNERSHIP ON DATABASE SMDH_OPENFLOW TO ROLE OPENFLOW_ADMIN COPY CURRENT GRANTS;
+GRANT OWNERSHIP ON SCHEMA SMDH_OPENFLOW.OPENFLOW TO ROLE OPENFLOW_ADMIN COPY CURRENT GRANTS;
 
 -- ============================================================================
--- 3. Create Kinesis Data Source (Openflow Connector)
+-- 4. Create Runtime Role for Kinesis Connector
 -- ============================================================================
 
-SELECT '3. Configuring Snowflake Openflow Connector for Kinesis...' AS step;
+SELECT '4. Creating Runtime Role for Kinesis Connector...' AS step;
 
--- Note: Snowflake Openflow uses PIPE objects to configure Kinesis ingestion
--- Each tenant will have their own pipe configured in tenant setup scripts
--- Here we create a template and verify connectivity
+USE ROLE OPENFLOW_ADMIN;
 
--- Create a test database for validation (temporary)
-CREATE DATABASE IF NOT EXISTS smdh_openflow_test
-    DATA_RETENTION_TIME_IN_DAYS = 1
-    COMMENT = 'Temporary database for testing Openflow Kinesis connector';
+-- Create runtime role specifically for Kinesis ingestion
+CREATE ROLE IF NOT EXISTS OPENFLOW_RUNTIME_ROLE_KINESIS
+    COMMENT = 'Runtime role for Openflow Kinesis connector - ingests sensor data';
 
-USE DATABASE smdh_openflow_test;
-CREATE SCHEMA IF NOT EXISTS test_schema;
-USE SCHEMA test_schema;
+-- Grant role to admin
+GRANT ROLE OPENFLOW_RUNTIME_ROLE_KINESIS TO ROLE OPENFLOW_ADMIN;
 
--- Create test table matching sensor data structure
-CREATE OR REPLACE TABLE kinesis_test_data (
-    record_metadata VARIANT,
-    record_content VARIANT,
-    ingestion_timestamp TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
-)
-COMMENT = 'Temporary table for testing Kinesis connector';
+-- Switch back to accountadmin for grants
+USE ROLE ACCOUNTADMIN;
 
--- Create test pipe for Kinesis stream
--- Note: COPY INTO will be executed automatically by Snowflake when new data arrives in Kinesis
-CREATE OR REPLACE PIPE kinesis_test_pipe
-    AUTO_INGEST = TRUE
-    AWS_SNS_TOPIC = NULL  -- Not used for Kinesis (SNS is for S3 notifications)
-    INTEGRATION = 'smdh_kinesis_integration'
-    COMMENT = 'Test pipe for validating Kinesis connectivity'
+-- Grant warehouse access
+GRANT USAGE, OPERATE ON WAREHOUSE SMDH_WH TO ROLE OPENFLOW_RUNTIME_ROLE_KINESIS;
+
+-- Grant access to Openflow database/schema
+GRANT USAGE ON DATABASE SMDH_OPENFLOW TO ROLE OPENFLOW_RUNTIME_ROLE_KINESIS;
+GRANT USAGE ON SCHEMA SMDH_OPENFLOW.OPENFLOW TO ROLE OPENFLOW_RUNTIME_ROLE_KINESIS;
+
+-- Grant external access integration
+GRANT USAGE ON INTEGRATION OPENFLOW_AWS_EAI TO ROLE OPENFLOW_RUNTIME_ROLE_KINESIS;
+
+-- Grant access to infrastructure database for connector tracking
+GRANT USAGE ON DATABASE SMDH_INFRASTRUCTURE TO ROLE OPENFLOW_RUNTIME_ROLE_KINESIS;
+GRANT USAGE ON SCHEMA SMDH_INFRASTRUCTURE.TENANT_CONFIGS TO ROLE OPENFLOW_RUNTIME_ROLE_KINESIS;
+GRANT SELECT ON TABLE SMDH_INFRASTRUCTURE.TENANT_CONFIGS.TENANTS TO ROLE OPENFLOW_RUNTIME_ROLE_KINESIS;
+
+SELECT 'Created role: OPENFLOW_RUNTIME_ROLE_KINESIS' AS status;
+
+-- ============================================================================
+-- 5. Create Stored Procedure to Grant Tenant Database Access
+-- ============================================================================
+
+SELECT '5. Creating Procedure to Grant Tenant Access...' AS step;
+
+USE DATABASE SMDH_INFRASTRUCTURE;
+USE SCHEMA TENANT_CONFIGS;
+
+-- Procedure to grant Openflow access to a tenant database
+-- Call this when onboarding a new tenant
+CREATE OR REPLACE PROCEDURE sp_grant_openflow_tenant_access(tenant_id_param VARCHAR)
+RETURNS STRING
+LANGUAGE SQL
+EXECUTE AS CALLER
 AS
-COPY INTO kinesis_test_data (record_metadata, record_content)
-FROM (
-    SELECT
-        METADATA$KINESIS AS record_metadata,
-        $1 AS record_content
-    FROM '@' || &kinesis_stream_arn
-)
-FILE_FORMAT = (TYPE = 'JSON');
+$$
+DECLARE
+    db_name VARCHAR;
+    grant_sql VARCHAR;
+BEGIN
+    -- Construct database name
+    db_name := 'SMDH_TENANT_' || UPPER(:tenant_id_param);
 
--- Show pipe status
-SHOW PIPES LIKE 'kinesis_test_pipe';
+    -- Grant database usage
+    grant_sql := 'GRANT USAGE ON DATABASE ' || db_name || ' TO ROLE OPENFLOW_RUNTIME_ROLE_KINESIS';
+    EXECUTE IMMEDIATE grant_sql;
 
--- Get pipe notification channel (for AWS EventBridge if needed)
-SELECT SYSTEM$PIPE_STATUS('kinesis_test_pipe') AS pipe_status;
+    -- Grant schema usage
+    grant_sql := 'GRANT USAGE ON SCHEMA ' || db_name || '.RAW TO ROLE OPENFLOW_RUNTIME_ROLE_KINESIS';
+    EXECUTE IMMEDIATE grant_sql;
+
+    -- Grant CREATE TABLE (Openflow auto-creates destination tables named after Kinesis stream)
+    grant_sql := 'GRANT CREATE TABLE ON SCHEMA ' || db_name || '.RAW TO ROLE OPENFLOW_RUNTIME_ROLE_KINESIS';
+    EXECUTE IMMEDIATE grant_sql;
+
+    -- Grant table permissions (INSERT for ingestion, SELECT for validation)
+    grant_sql := 'GRANT INSERT, SELECT ON ALL TABLES IN SCHEMA ' || db_name || '.RAW TO ROLE OPENFLOW_RUNTIME_ROLE_KINESIS';
+    EXECUTE IMMEDIATE grant_sql;
+
+    -- Grant on future tables
+    grant_sql := 'GRANT INSERT, SELECT ON FUTURE TABLES IN SCHEMA ' || db_name || '.RAW TO ROLE OPENFLOW_RUNTIME_ROLE_KINESIS';
+    EXECUTE IMMEDIATE grant_sql;
+
+    RETURN 'Granted Openflow access to database: ' || db_name;
+END;
+$$;
+
+GRANT USAGE ON PROCEDURE sp_grant_openflow_tenant_access(VARCHAR) TO ROLE OPENFLOW_ADMIN;
+
+SELECT 'Created procedure: sp_grant_openflow_tenant_access' AS status;
 
 -- ============================================================================
--- 4. Create Infrastructure Tracking Table for Openflow Configs
+-- 6. Create Openflow Connector Tracking Table
 -- ============================================================================
 
-SELECT '4. Creating Openflow Configuration Tracking...' AS step;
+SELECT '6. Creating Openflow Connector Tracking Table...' AS step;
 
-USE DATABASE smdh_infrastructure;
-USE SCHEMA tenant_configs;
+USE DATABASE SMDH_INFRASTRUCTURE;
+USE SCHEMA TENANT_CONFIGS;
 
 CREATE TABLE IF NOT EXISTS openflow_connectors (
-    connector_id VARCHAR(255) DEFAULT UUID_STRING(),
+    -- Primary key
+    connector_id VARCHAR(255) DEFAULT UUID_STRING() PRIMARY KEY,
+
+    -- Tenant association
     tenant_id VARCHAR(100) NOT NULL,
 
-    -- Pipe details
-    database_name VARCHAR(255) NOT NULL,
-    schema_name VARCHAR(255) NOT NULL,
-    pipe_name VARCHAR(255) NOT NULL,
-    table_name VARCHAR(255) NOT NULL,
+    -- Connector details
+    connector_name VARCHAR(255) NOT NULL,
+    connector_type VARCHAR(50) DEFAULT 'KINESIS',
 
-    -- AWS details
-    kinesis_stream_arn VARCHAR(500) NOT NULL,
-    aws_region VARCHAR(50) NOT NULL DEFAULT 'eu-west-2',
+    -- Target table details
+    target_database VARCHAR(255) NOT NULL,
+    target_schema VARCHAR(255) NOT NULL,
+    target_table VARCHAR(255) NOT NULL,
 
-    -- Status
-    status VARCHAR(50) DEFAULT 'active',
+    -- AWS Kinesis details
+    kinesis_stream_name VARCHAR(255) NOT NULL,
+    kinesis_stream_arn VARCHAR(500),
+    aws_region VARCHAR(50) DEFAULT 'eu-west-2',
+
+    -- Openflow runtime details
+    runtime_name VARCHAR(255),
+    deployment_name VARCHAR(255),
+
+    -- Status tracking
+    status VARCHAR(50) DEFAULT 'pending',
     created_date TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
-    last_ingestion_timestamp TIMESTAMP_NTZ,
+    activated_date TIMESTAMP_NTZ,
+    last_health_check TIMESTAMP_NTZ,
+
+    -- Metrics
     total_records_ingested NUMBER(20) DEFAULT 0,
+    last_ingestion_timestamp TIMESTAMP_NTZ,
+    error_count NUMBER(10) DEFAULT 0,
+    last_error_message VARCHAR(2000),
 
-    -- Configuration
-    auto_ingest BOOLEAN DEFAULT TRUE,
-    integration_name VARCHAR(255) DEFAULT 'smdh_kinesis_integration',
-
-    -- Metadata
+    -- Configuration (JSON)
     configuration VARIANT,
 
-    PRIMARY KEY (connector_id),
+    -- Foreign key (not enforced)
     CONSTRAINT fk_connector_tenant FOREIGN KEY (tenant_id)
         REFERENCES tenants(tenant_id) NOT ENFORCED
-
-    -- Note: Snowflake does not support CHECK constraints
-    -- Valid values for status: 'active', 'paused', 'error', 'decommissioned'
 )
-COMMENT = 'Registry of Snowflake Openflow connectors per tenant. Tracks Kinesis pipes and ingestion status.';
+COMMENT = 'Registry of Snowflake Openflow connectors. Tracks Kinesis stream to Snowflake table mappings per tenant.';
+
+-- Create index-like clustering for common queries
+ALTER TABLE openflow_connectors CLUSTER BY (tenant_id, status);
+
+SELECT 'Created table: openflow_connectors' AS status;
 
 -- ============================================================================
--- 5. Create Monitoring View for Pipe Status
+-- 7. Create Monitoring Views
 -- ============================================================================
 
-SELECT '5. Creating Pipe Monitoring Views...' AS step;
+SELECT '7. Creating Monitoring Views...' AS step;
 
-USE SCHEMA monitoring;
+USE SCHEMA MONITORING;
 
-CREATE OR REPLACE VIEW v_pipe_status AS
+-- View for Openflow connector status
+CREATE OR REPLACE VIEW v_openflow_connector_status AS
 SELECT
-    pipe_catalog_name || '.' || pipe_schema_name || '.' || pipe_name AS pipe_full_name,
-    pipe_name,
-    is_autoingest_enabled,
-    notification_channel_name,
-    pipe_owner,
-    definition,
-    created_on,
-    SYSTEM$PIPE_STATUS(pipe_catalog_name || '.' || pipe_schema_name || '.' || pipe_name) AS pipe_status
-FROM SNOWFLAKE.ACCOUNT_USAGE.PIPES
-WHERE pipe_name LIKE '%kinesis%' OR pipe_name LIKE 'smdh_%'
-ORDER BY created_on DESC;
+    oc.connector_id,
+    oc.tenant_id,
+    t.tenant_name,
+    oc.connector_name,
+    oc.kinesis_stream_name,
+    oc.target_database || '.' || oc.target_schema || '.' || oc.target_table AS target_table,
+    oc.status,
+    oc.total_records_ingested,
+    oc.last_ingestion_timestamp,
+    DATEDIFF(MINUTE, oc.last_ingestion_timestamp, CURRENT_TIMESTAMP()) AS minutes_since_last_ingestion,
+    oc.error_count,
+    oc.last_error_message,
+    oc.created_date,
+    oc.activated_date
+FROM tenant_configs.openflow_connectors oc
+LEFT JOIN tenant_configs.tenants t ON oc.tenant_id = t.tenant_id
+ORDER BY oc.tenant_id, oc.connector_name;
 
-GRANT SELECT ON v_pipe_status TO ROLE smdh_monitoring;
+GRANT SELECT ON VIEW v_openflow_connector_status TO ROLE OPENFLOW_ADMIN;
 
--- Create view for copy history (data ingestion metrics)
-CREATE OR REPLACE VIEW v_kinesis_ingestion_metrics AS
+-- View for connector health summary
+CREATE OR REPLACE VIEW v_openflow_health_summary AS
 SELECT
-    pipe_name,
-    DATE_TRUNC('hour', last_load_time) AS ingestion_hour,
-    SUM(row_count) AS total_rows_ingested,
-    SUM(file_size) AS total_bytes_ingested,
-    COUNT(*) AS load_count,
-    AVG(row_count) AS avg_rows_per_load,
-    MIN(last_load_time) AS first_load,
-    MAX(last_load_time) AS last_load
-FROM SNOWFLAKE.ACCOUNT_USAGE.COPY_HISTORY
-WHERE pipe_name LIKE 'smdh_%'
-    AND last_load_time >= DATEADD(day, -7, CURRENT_TIMESTAMP())
-GROUP BY pipe_name, ingestion_hour
-ORDER BY ingestion_hour DESC, pipe_name;
+    status,
+    COUNT(*) AS connector_count,
+    SUM(total_records_ingested) AS total_records,
+    SUM(error_count) AS total_errors,
+    MAX(last_ingestion_timestamp) AS most_recent_ingestion
+FROM tenant_configs.openflow_connectors
+GROUP BY status;
 
-GRANT SELECT ON v_kinesis_ingestion_metrics TO ROLE smdh_monitoring;
+GRANT SELECT ON VIEW v_openflow_health_summary TO ROLE OPENFLOW_ADMIN;
 
--- ============================================================================
--- 6. Create Stored Procedure for Pipe Management
--- ============================================================================
+SELECT 'Created monitoring views' AS status;
 
-SELECT '6. Creating Pipe Management Procedures...' AS step;
-
-USE DATABASE smdh_infrastructure;
-USE SCHEMA tenant_configs;
-
--- Procedure to pause a tenant's Kinesis ingestion
-CREATE OR REPLACE PROCEDURE sp_pause_tenant_ingestion(tenant_id_param VARCHAR)
-RETURNS STRING
-LANGUAGE SQL
-EXECUTE AS CALLER
-AS
-$$
-DECLARE
-    pipe_list RESULTSET;
-    pipe_full_name VARCHAR;
-    result_msg VARCHAR DEFAULT '';
-BEGIN
-    -- Get all pipes for tenant
-    pipe_list := (
-        SELECT database_name || '.' || schema_name || '.' || pipe_name AS full_pipe_name
-        FROM smdh_infrastructure.tenant_configs.openflow_connectors
-        WHERE tenant_id = :tenant_id_param AND status = 'active'
-    );
-
-    -- Pause each pipe
-    FOR record IN pipe_list DO
-        pipe_full_name := record.full_pipe_name;
-        EXECUTE IMMEDIATE 'ALTER PIPE ' || pipe_full_name || ' SET PIPE_EXECUTION_PAUSED = TRUE';
-        result_msg := result_msg || 'Paused: ' || pipe_full_name || '; ';
-    END FOR;
-
-    -- Update status in tracking table
-    UPDATE smdh_infrastructure.tenant_configs.openflow_connectors
-    SET status = 'paused'
-    WHERE tenant_id = :tenant_id_param;
-
-    RETURN 'Successfully paused ingestion for tenant ' || tenant_id_param || '. ' || result_msg;
-END;
-$$;
-
--- Procedure to resume a tenant's Kinesis ingestion
-CREATE OR REPLACE PROCEDURE sp_resume_tenant_ingestion(tenant_id_param VARCHAR)
-RETURNS STRING
-LANGUAGE SQL
-EXECUTE AS CALLER
-AS
-$$
-DECLARE
-    pipe_list RESULTSET;
-    pipe_full_name VARCHAR;
-    result_msg VARCHAR DEFAULT '';
-BEGIN
-    -- Get all pipes for tenant
-    pipe_list := (
-        SELECT database_name || '.' || schema_name || '.' || pipe_name AS full_pipe_name
-        FROM smdh_infrastructure.tenant_configs.openflow_connectors
-        WHERE tenant_id = :tenant_id_param AND status = 'paused'
-    );
-
-    -- Resume each pipe
-    FOR record IN pipe_list DO
-        pipe_full_name := record.full_pipe_name;
-        EXECUTE IMMEDIATE 'ALTER PIPE ' || pipe_full_name || ' SET PIPE_EXECUTION_PAUSED = FALSE';
-        result_msg := result_msg || 'Resumed: ' || pipe_full_name || '; ';
-    END FOR;
-
-    -- Update status in tracking table
-    UPDATE smdh_infrastructure.tenant_configs.openflow_connectors
-    SET status = 'active'
-    WHERE tenant_id = :tenant_id_param;
-
-    RETURN 'Successfully resumed ingestion for tenant ' || tenant_id_param || '. ' || result_msg;
-END;
-$$;
-
-GRANT USAGE ON PROCEDURE sp_pause_tenant_ingestion(VARCHAR) TO ROLE smdh_tenant_operator;
-GRANT USAGE ON PROCEDURE sp_resume_tenant_ingestion(VARCHAR) TO ROLE smdh_tenant_operator;
+-- NOTE: Per-tenant Openflow access is granted in tenant/13_create_streams.sql
+-- via: CALL smdh_infrastructure.tenant_configs.sp_grant_openflow_tenant_access($tenant_id);
 
 -- ============================================================================
--- 7. Verification and Testing
+-- 8. Verification
 -- ============================================================================
 
-SELECT '7. Verifying Openflow Connector Setup...' AS step;
+SELECT '8. Verifying Openflow Setup...' AS step;
 
--- Check integration
-SELECT 'Storage Integration Status:' AS verification;
-DESC INTEGRATION smdh_kinesis_integration;
+-- Check roles
+SELECT 'Openflow Roles:' AS verification;
+SHOW ROLES LIKE '%OPENFLOW%';
 
--- Check test pipe
-SELECT 'Test Pipe Status:' AS verification;
-USE DATABASE smdh_openflow_test;
-USE SCHEMA test_schema;
-SHOW PIPES LIKE 'kinesis_test_pipe';
+-- Check database
+SELECT 'Openflow Database:' AS verification;
+SHOW DATABASES LIKE 'SMDH_OPENFLOW';
+
+-- Check network rules
+SELECT 'Network Rules:' AS verification;
+USE DATABASE SMDH_OPENFLOW;
+SHOW NETWORK RULES;
+
+-- Check external access integration
+SELECT 'External Access Integrations:' AS verification;
+SHOW EXTERNAL ACCESS INTEGRATIONS LIKE 'OPENFLOW%';
 
 -- Check tracking table
-SELECT 'Openflow Connector Tracking Table:' AS verification;
-DESC TABLE smdh_infrastructure.tenant_configs.openflow_connectors;
-
--- Check procedures
-SELECT 'Pipe Management Procedures:' AS verification;
-SHOW PROCEDURES LIKE 'sp_%_tenant_ingestion' IN smdh_infrastructure.tenant_configs;
+SELECT 'Connector Tracking Table:' AS verification;
+DESC TABLE SMDH_INFRASTRUCTURE.TENANT_CONFIGS.OPENFLOW_CONNECTORS;
 
 -- ============================================================================
--- 8. Summary and Next Steps
+-- 10. Summary and Next Steps
 -- ============================================================================
 
 SELECT '╔════════════════════════════════════════════════════════════════╗' AS summary
-UNION ALL SELECT '║  SMDH Openflow Kinesis Connector Setup Complete            ║'
-UNION ALL SELECT '╚════════════════════════════════════════════════════════════╝'
+UNION ALL SELECT '║  SMDH Openflow Setup Complete (SQL Configuration)            ║'
+UNION ALL SELECT '╚════════════════════════════════════════════════════════════════╝'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Created Resources:'
-UNION ALL SELECT '  [OK] Storage Integration: smdh_kinesis_integration'
-UNION ALL SELECT '  [OK] Test Database: smdh_openflow_test (for validation)'
-UNION ALL SELECT '  [OK] Tracking Table: openflow_connectors'
-UNION ALL SELECT '  [OK] Monitoring Views: v_pipe_status, v_kinesis_ingestion_metrics'
-UNION ALL SELECT '  [OK] Management Procedures: sp_pause/resume_tenant_ingestion'
+UNION ALL SELECT '  [OK] Role: OPENFLOW_ADMIN'
+UNION ALL SELECT '  [OK] Role: OPENFLOW_RUNTIME_ROLE_KINESIS'
+UNION ALL SELECT '  [OK] Database: SMDH_OPENFLOW (with image repository)'
+UNION ALL SELECT '  [OK] Network Rule: OPENFLOW_AWS_EU_WEST_2_RULE'
+UNION ALL SELECT '  [OK] External Access Integration: OPENFLOW_AWS_EAI'
+UNION ALL SELECT '  [OK] Table: openflow_connectors (tracking)'
+UNION ALL SELECT '  [OK] Procedure: sp_grant_openflow_tenant_access'
+UNION ALL SELECT '  [OK] Views: v_openflow_connector_status, v_openflow_health_summary'
 UNION ALL SELECT ''
-UNION ALL SELECT '⚠ CRITICAL AWS CONFIGURATION REQUIRED:'
+UNION ALL SELECT '════════════════════════════════════════════════════════════════'
+UNION ALL SELECT '  NEXT STEPS - Complete in Snowsight UI'
+UNION ALL SELECT '════════════════════════════════════════════════════════════════'
 UNION ALL SELECT ''
-UNION ALL SELECT 'Run this query to get Snowflake credentials for AWS:'
-UNION ALL SELECT '  DESC INTEGRATION smdh_kinesis_integration;'
+UNION ALL SELECT '1. Open Snowsight and navigate to: Data > Openflow'
 UNION ALL SELECT ''
-UNION ALL SELECT 'Copy the following values:'
-UNION ALL SELECT '  • STORAGE_AWS_IAM_USER_ARN'
-UNION ALL SELECT '  • STORAGE_AWS_EXTERNAL_ID'
+UNION ALL SELECT '2. CREATE DEPLOYMENT:'
+UNION ALL SELECT '   - Click "Create Deployment"'
+UNION ALL SELECT '   - Name: smdh-openflow-deployment'
+UNION ALL SELECT '   - Select Snowflake Deployment (managed)'
 UNION ALL SELECT ''
-UNION ALL SELECT 'Update your AWS IAM role trust policy with these values:'
-UNION ALL SELECT '{'
-UNION ALL SELECT '  "Version": "2012-10-17",'
-UNION ALL SELECT '  "Statement": ['
-UNION ALL SELECT '    {'
-UNION ALL SELECT '      "Effect": "Allow",'
-UNION ALL SELECT '      "Principal": {'
-UNION ALL SELECT '        "AWS": "<STORAGE_AWS_IAM_USER_ARN from above>"'
-UNION ALL SELECT '      },'
-UNION ALL SELECT '      "Action": "sts:AssumeRole",'
-UNION ALL SELECT '      "Condition": {'
-UNION ALL SELECT '        "StringEquals": {'
-UNION ALL SELECT '          "sts:ExternalId": "<STORAGE_AWS_EXTERNAL_ID from above>"'
-UNION ALL SELECT '        }'
-UNION ALL SELECT '      }'
-UNION ALL SELECT '    }'
-UNION ALL SELECT '  ]'
-UNION ALL SELECT '}'
+UNION ALL SELECT '3. CREATE RUNTIME:'
+UNION ALL SELECT '   - In your deployment, click "Create Runtime"'
+UNION ALL SELECT '   - Name: smdh-kinesis-runtime'
+UNION ALL SELECT '   - Role: OPENFLOW_RUNTIME_ROLE_KINESIS'
+UNION ALL SELECT '   - Warehouse: SMDH_WH'
+UNION ALL SELECT '   - External Access: OPENFLOW_AWS_EAI'
 UNION ALL SELECT ''
-UNION ALL SELECT 'Testing:'
-UNION ALL SELECT '  1. Send test message to Kinesis stream from AWS console'
-UNION ALL SELECT '  2. Wait 60 seconds for Snowflake to poll Kinesis'
-UNION ALL SELECT '  3. Query: SELECT * FROM smdh_openflow_test.test_schema.kinesis_test_data;'
-UNION ALL SELECT '  4. Verify data appears in table'
+UNION ALL SELECT '4. ADD KINESIS CONNECTOR:'
+UNION ALL SELECT '   - In the runtime, click "Add Connector"'
+UNION ALL SELECT '   - Select "Amazon Kinesis"'
+UNION ALL SELECT '   - Configure AWS credentials and stream details'
+UNION ALL SELECT '   - Set stream-to-table mapping'
 UNION ALL SELECT ''
-UNION ALL SELECT 'Next Steps:'
-UNION ALL SELECT '  1. Update AWS IAM role trust policy (CRITICAL)'
-UNION ALL SELECT '  2. Test connectivity with sample Kinesis message'
-UNION ALL SELECT '  3. Run tenant/10_create_tenant_database.sql to onboard first tenant'
-UNION ALL SELECT '  4. Each tenant will get their own Kinesis pipe configured automatically'
+UNION ALL SELECT '5. For each new tenant, run:'
+UNION ALL SELECT '   CALL sp_grant_openflow_tenant_access(''tenant_id'');'
 UNION ALL SELECT ''
-UNION ALL SELECT 'Monitoring Queries:'
-UNION ALL SELECT '  • Pipe status: SELECT * FROM smdh_infrastructure.monitoring.v_pipe_status;'
-UNION ALL SELECT '  • Ingestion metrics: SELECT * FROM smdh_infrastructure.monitoring.v_kinesis_ingestion_metrics;'
-UNION ALL SELECT '  • Pause ingestion: CALL sp_pause_tenant_ingestion(''tenant_id'');'
-UNION ALL SELECT '  • Resume ingestion: CALL sp_resume_tenant_ingestion(''tenant_id'');'
-UNION ALL SELECT '============================================================';
+UNION ALL SELECT 'Documentation: docs/deployment/Tenant_Onboarding_Guide.md'
+UNION ALL SELECT '════════════════════════════════════════════════════════════════';
 
--- Display integration details for AWS configuration
-SELECT 'Copy these values to AWS IAM role trust policy:' AS instruction;
-DESC INTEGRATION smdh_kinesis_integration;
+-- ============================================================================
+-- Quick Reference Queries
+-- ============================================================================
+
+SELECT 'Quick Reference - Useful Queries:' AS reference
+UNION ALL SELECT ''
+UNION ALL SELECT '-- Check connector status:'
+UNION ALL SELECT 'SELECT * FROM smdh_infrastructure.monitoring.v_openflow_connector_status;'
+UNION ALL SELECT ''
+UNION ALL SELECT '-- Check health summary:'
+UNION ALL SELECT 'SELECT * FROM smdh_infrastructure.monitoring.v_openflow_health_summary;'
+UNION ALL SELECT ''
+UNION ALL SELECT '-- Grant access to new tenant:'
+UNION ALL SELECT 'CALL smdh_infrastructure.tenant_configs.sp_grant_openflow_tenant_access(''tenant_id'');'
+UNION ALL SELECT ''
+UNION ALL SELECT '-- Register new connector (after UI setup):'
+UNION ALL SELECT 'INSERT INTO smdh_infrastructure.tenant_configs.openflow_connectors'
+UNION ALL SELECT '  (tenant_id, connector_name, target_database, target_schema, target_table,'
+UNION ALL SELECT '   kinesis_stream_name, runtime_name, status)'
+UNION ALL SELECT 'SELECT ''tenant_id'', ''connector_name'', ''SMDH_TENANT_XXX'', ''RAW'','
+UNION ALL SELECT '       ''sensor_readings'', ''smdh-tenant-stream'', ''smdh-kinesis-runtime'', ''active'';';

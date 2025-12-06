@@ -1,10 +1,10 @@
- Smart Manufacturing Data Hub (SMDH) - Infrastructure Implementation Guide
+Smart Manufacturing Data Hub (SMDH) - Infrastructure Implementation Guide
 
- Overview
+Overview
 
 This document provides detailed step-by-step implementation instructions for deploying and configuring the SMDH platform. It complements the [SMDH AWS Design Document](../docs/detailed-design/SMDH%AWS%design.md) which explains the architectural concepts.
 
- Quick Start: For immediate deployment, use the Terraform infrastructure in [terraform/](terraform/). See [Terraform Deployment](terraform-deployment-recommended) below.
+Quick Start: For immediate deployment, use the Terraform infrastructure in [terraform/](terraform/). See [Terraform Deployment](terraform-deployment-recommended) below.
 
 For high-level architecture and design decisions, refer to the AWS Design Document. This guide focuses on:
 
@@ -21,7 +21,7 @@ For high-level architecture and design decisions, refer to the AWS Design Docume
 
 ---
 
- Table of Contents
+Table of Contents
 
 . [Terraform Deployment (Recommended)](terraform-deployment-recommended)
 . [Pre-requisites](-pre-requisites)
@@ -38,9 +38,9 @@ For high-level architecture and design decisions, refer to the AWS Design Docume
 
 ---
 
- Terraform Deployment (Recommended)
+Terraform Deployment (Recommended)
 
- Overview
+Overview
 
 The SMDH platform is deployed using Terraform Infrastructure as Code. This approach provides:
 
@@ -50,14 +50,14 @@ The SMDH platform is deployed using Terraform Infrastructure as Code. This appro
 - Comprehensive tagging for cost allocation and compliance
 - State management with S backend and DynamoDB locking
 
- Deployment Summary
+Deployment Summary
 
-Successfully Deployed:  November  : UTC
+Successfully Deployed: November : UTC
 Environment: Development (eu-west-)
-Resources Created:  AWS resources
-Tenant: test_tenant ( sites,  gateways)
+Resources Created: AWS resources
+Tenant: test_tenant ( sites, gateways)
 
- Quick Start
+Quick Start
 
 ```bash
  Navigate to Terraform directory
@@ -80,18 +80,20 @@ terraform plan -var-file="environments/dev/terraform.tfvars"
 terraform apply -var-file="environments/dev/terraform.tfvars"
 ```
 
- What Gets Deployed
+What Gets Deployed
 
 The Terraform configuration automatically creates:
 
- Core Infrastructure
+Core Infrastructure
+
 - IoT Core: Thing Types (LoRaWAN, DevTank), logging, IAM roles
 - Kinesis: On-demand data stream for sensor data
 - IAM: Cross-account roles for Snowflake integration
 - Secrets Manager: Secure credential storage for Snowflake
 - CloudWatch: Log groups, dashboards, alarms, SNS topics
 
- Per-Tenant Resources
+Per-Tenant Resources
+
 - IoT Things: Gateways and sensors with proper attributes
 - X. Certificates: Automatically generated with private keys
 - IoT Policies: Tenant-isolated topic access control
@@ -99,29 +101,37 @@ The Terraform configuration automatically creates:
 - SNS Topics: Tenant-specific alerting
 - CloudWatch Alarms: Connection failures, message failures
 
- Deployed Configuration
+Deployed Configuration
 
- IoT Endpoint
+IoT Endpoint
+
 ```
 IoT Endpoint: afbiixmeupm-ats.iot.eu-west-.amazonaws.com
 MQTT Address: mqtt://afbiixmeupm-ats.iot.eu-west-.amazonaws.com:
 ```
 
- Kinesis Stream
+Kinesis Streams (Per-Tenant Architecture)
+
 ```
-Stream Name: smdh-sensor-data-stream
-Stream ARN: arn:aws:kinesis:eu-west-::stream/smdh-sensor-data-stream
-Mode: ON_DEMAND (auto-scaling)
+Architecture: One dedicated stream per tenant
+Stream Pattern: smdh-{tenant_id}-stream
+Example: smdh-test_tenant-stream
+Mode: ON_DEMAND (auto-scaling per tenant)
+
+Note: Per-tenant streams are REQUIRED because Snowflake Openflow
+cannot filter records from a shared stream.
 ```
 
- Monitoring
+Monitoring
+
 ```
 Dashboard: https://console.aws.amazon.com/cloudwatch/home?region=eu-west-dashboards:name=smdh-platform-dev
 Log Group: /aws/iot/smdh (-day retention)
 SNS Topic: smdh-platform-alarms-dev
 ```
 
- Test Tenant Configuration
+Test Tenant Configuration
+
 ```
 Tenant ID: test_tenant
 Sites:  (site_, site_)
@@ -131,7 +141,7 @@ IoT Rule: smdh_route_test_tenant
 Certificates:  X. certificates with private keys
 ```
 
- Terraform Outputs
+Terraform Outputs
 
 View all deployment outputs:
 
@@ -149,50 +159,57 @@ terraform output -json tenant_certificate_arns
 terraform output snowflake_iam_role_arn
 ```
 
- Post-Deployment Steps
+Post-Deployment Steps
 
 After Terraform deployment completes:
 
 . Confirm SNS Subscriptions
-   - Check email for subscription confirmations
-   - Confirm both platform and tenant alert topics
+
+- Check email for subscription confirmations
+- Confirm both platform and tenant alert topics
 
 . Download Device Certificates
-   ```bash
-   terraform output -json tenant_configurations | jq .
-   ```
-   - Note: Private keys are in Terraform state, extract carefully
+
+```bash
+terraform output -json tenant_configurations | jq .
+```
+
+- Note: Private keys are in Terraform state, extract carefully
 
 . Configure Snowflake Integration
-   - Update `snowflake_account_id` in terraform.tfvars
-   - Update `snowflake_external_id` (generate UUID)
-   - Re-run `terraform apply` to update IAM role trust policy
+
+- Update `snowflake_account_id` in terraform.tfvars
+- Update `snowflake_external_id` (generate UUID)
+- Re-run `terraform apply` to update IAM role trust policy
 
 . Test MQTT Connectivity
-   - Use certificates to test gateway connections
-   - See [Gateway Device Setup](-gateway-device-setup) below
 
- Known Issues
+- Use certificates to test gateway connections
+- See [Gateway Device Setup](-gateway-device-setup) below
 
- AWS Provider Default Tags Bug
+Known Issues
+
+AWS Provider Default Tags Bug
 During deployment, you may see errors about "Provider produced inconsistent final plan" related to tags on IoT Policy resources. This is a known AWS provider issue and does not affect functionality. All resources are created successfully.
 
 Workaround: After the initial error, run `terraform refresh` and `terraform apply` again. The state will sync correctly.
 
- IoT Thing Type Searchable Attributes
-AWS IoT supports a maximum of  searchable attributes per Thing Type. The current configuration uses:
+IoT Thing Type Searchable Attributes
+AWS IoT supports a maximum of searchable attributes per Thing Type. The current configuration uses:
+
 - `tenant_id`
 - `site_id`
 - `device_type`
 
- IoT Rule SQL Syntax
+IoT Rule SQL Syntax
 IoT Rules SQL does not support checking built-in functions in WHERE clauses. For example:
+
 - Invalid: `WHERE timestamp() IS NOT NULL`
 - Valid: `SELECT , timestamp() as iot_timestamp FROM 'topic'`
 
 The `timestamp()` function generates a timestamp at message processing time and doesn't need validation. Remove WHERE clause checks on function results.
 
- Terraform Module Structure
+Terraform Module Structure
 
 ```
 terraform/
@@ -215,7 +232,7 @@ terraform/
 
 For comprehensive documentation, see [terraform/README.md](terraform/README.md) and [terraform/TAGGING_STRATEGY.md](terraform/TAGGING_STRATEGY.md).
 
- Next Steps
+Next Steps
 
 - Manual Operations: Continue to [AWS Account Setup](-aws-account-setup) for manual CLI commands (reference only)
 - Snowflake Setup: Proceed to [Snowflake Configuration](-snowflake-configuration)
@@ -224,11 +241,12 @@ For comprehensive documentation, see [terraform/README.md](terraform/README.md) 
 
 ---
 
- . Pre-requisites
+. Pre-requisites
 
- Required Permissions
+Required Permissions
 
 AWS:
+
 - IoT Core administrator
 - Kinesis administrator
 - Secrets Manager administrator
@@ -236,10 +254,11 @@ AWS:
 - IAM administrator
 
 Snowflake:
+
 - Account admin role
 - Ability to create databases and roles
 
- Required Tools
+Required Tools
 
 ```bash
  AWS CLI (v.x minimum)
@@ -255,7 +274,7 @@ jq --version
 openssl version
 ```
 
- Environment Setup
+Environment Setup
 
 ```bash
  Set these environment variables
@@ -267,17 +286,18 @@ export SNOWFLAKE_USER="admin_user"
 
 ---
 
- . AWS Account Setup
+. AWS Account Setup
 
 > Note: This section documents manual AWS CLI commands for reference. For production deployments, use the [Terraform infrastructure](terraform-deployment-recommended) which automates all these steps.
 
 The manual commands below are useful for:
+
 - Understanding the underlying AWS resources
 - Troubleshooting and debugging
 - One-off operations outside Terraform management
 - Learning the SMDH architecture
 
- . Enable AWS IoT Core
+. Enable AWS IoT Core
 
 ```bash
  Verify IoT Core is available in region
@@ -295,24 +315,28 @@ IOT_ENDPOINT=$(aws iot describe-endpoint \
 echo "IoT Endpoint: $IOT_ENDPOINT"
 ```
 
- . Create Kinesis Stream
+. Kinesis Streams (Per-Tenant - Created by Terraform)
 
 ```bash
- Create on-demand Kinesis stream for sensor data
+ NOTE: Kinesis streams are now created per-tenant by Terraform
+ Each tenant gets their own stream: smdh-{tenant_id}-stream
+ This is REQUIRED because Snowflake Openflow cannot filter from a shared stream
+
+ Manual creation example (for reference only):
 aws kinesis create-stream \
-  --stream-name smdh-sensor-data-stream \
+  --stream-name smdh-${TENANT_ID}-stream \
   --stream-mode-details StreamMode=ON_DEMAND \
   --region $AWS_REGION
 
  Wait for stream to be active
 aws kinesis wait stream-exists \
-  --stream-name smdh-sensor-data-stream \
+  --stream-name smdh-${TENANT_ID}-stream \
   --region $AWS_REGION
 
-echo " Kinesis stream created successfully"
+echo " Kinesis stream created for tenant: smdh-${TENANT_ID}-stream"
 ```
 
- . Create Secrets Manager Secret for Snowflake
+. Create Secrets Manager Secret for Snowflake
 
 ```bash
  Create secret for Snowflake private key (placeholder)
@@ -327,7 +351,7 @@ aws secretsmanager create-secret \
 echo " Secrets Manager secret created"
 ```
 
- . Create CloudWatch Log Group
+. Create CloudWatch Log Group
 
 ```bash
  Create log group for IoT logs
@@ -344,7 +368,7 @@ aws logs put-retention-policy \
 echo " CloudWatch log group created"
 ```
 
- . Create IAM Role for Snowflake Integration
+. Create IAM Role for Snowflake Integration
 
 ```bash
  Create trust policy for Snowflake
@@ -404,21 +428,13 @@ echo " IAM role for Snowflake created"
 
 ---
 
- . Snowflake Configuration
+. Snowflake Configuration
 
->  Status: Fully implemented and validated (November , )
->
-> All Snowflake scripts have been tested and are production-ready. The implementation includes:
-> - Automated setup via `validate_setup.sh`
-> - Proper handling of Snowflake's dual variable system
-> - Complete tenant isolation with database-per-tenant architecture
-> - Comprehensive logging and error handling
-
- . Initialize Snowflake Account
+. Initialize Snowflake Account
 
 > Note: All Snowflake scripts have been validated and are available in `infrastructure/snowflake/`
 
- Quick Start - Complete Snowflake Setup
+Quick Start - Complete Snowflake Setup
 
 ```bash
  Navigate to Snowflake scripts directory
@@ -428,33 +444,36 @@ cd infrastructure/snowflake
 export SNOWSQL_PWD="your_password"
 
  Run the complete setup with validation
-./validate_setup.sh test_tenant "Test Tenant" eu-west- 
+./validate_setup.sh test_tenant "Test Tenant" eu-west-2
 
  Check the logs if needed
 ls -la /tmp/smdh_.log
 ```
 
- What Gets Created
+What Gets Created
 
 Running the validation script creates:
 
 . Infrastructure Database (`SMDH_INFRASTRUCTURE`)
-   - Tenant registry and configuration
-   - Monitoring and audit schemas
-   - Platform-wide roles and permissions
+
+- Tenant registry and configuration
+- Monitoring and audit schemas
+- Platform-wide roles and permissions
 
 . Tenant Database (`SMDH_TENANT_<tenant_id>`)
-   - Four data schemas: raw, normalized, aggregated, analytics
-   - File formats for JSON, CSV, and Parquet
-   - Internal stages for file uploads and error handling
-   - Tenant-specific roles with proper permissions
+
+- Four data schemas: raw, normalized, aggregated, analytics
+- File formats for JSON, CSV, and Parquet
+- Internal stages for file uploads and error handling
+- Tenant-specific roles with proper permissions
 
 . Shared Resources
-   - Multiple warehouses with auto-suspend
-   - Base roles for inheritance
-   - Monitoring views and procedures
 
- Core Infrastructure Setup (_infrastructure_setup.sql)
+- Multiple warehouses with auto-suspend
+- Base roles for inheritance
+- Monitoring views and procedures
+
+Core Infrastructure Setup (\_infrastructure_setup.sql)
 
 ```sql
 -- Connect to Snowflake as account admin
@@ -464,22 +483,22 @@ USE ROLE ACCOUNTADMIN;
 
 -- Create organizational database
 CREATE DATABASE IF NOT EXISTS smdh_infrastructure
-    DATA_RETENTION_TIME_IN_DAYS = 
+    DATA_RETENTION_TIME_IN_DAYS =
     COMMENT = 'SMDH platform infrastructure and shared resources. Contains tenant metadata, monitoring data, and audit logs.';
 
 USE DATABASE smdh_infrastructure;
 
 -- Create shared schemas
 CREATE SCHEMA IF NOT EXISTS tenant_configs
-    DATA_RETENTION_TIME_IN_DAYS = 
+    DATA_RETENTION_TIME_IN_DAYS =
     COMMENT = 'Tenant metadata, configuration, and registry. Central source of truth for all SMDH tenants.';
 
 CREATE SCHEMA IF NOT EXISTS monitoring
-    DATA_RETENTION_TIME_IN_DAYS = 
+    DATA_RETENTION_TIME_IN_DAYS =
     COMMENT = 'Platform-wide monitoring, metrics, and health checks. Used for operational dashboards.';
 
 CREATE SCHEMA IF NOT EXISTS audit
-    DATA_RETENTION_TIME_IN_DAYS = 
+    DATA_RETENTION_TIME_IN_DAYS =
     COMMENT = 'Audit logs, access tracking, and compliance records. Retained for  days for security compliance.';
 
 -- Create tenant registry table
@@ -523,31 +542,31 @@ GRANT ALL ON DATABASE smdh_infrastructure TO ROLE smdh_infrastructure_admin;
 GRANT ALL ON ALL SCHEMAS IN DATABASE smdh_infrastructure TO ROLE smdh_infrastructure_admin;
 ```
 
- . Create Shared Warehouse
+. Create Shared Warehouse
 
 ```sql
 -- Create shared warehouse for infrastructure operations
 CREATE WAREHOUSE IF NOT EXISTS smdh_infrastructure_wh
   WAREHOUSE_SIZE = 'xsmall'
-  AUTO_SUSPEND = 
+  AUTO_SUSPEND =
   AUTO_RESUME = true
   INITIALLY_SUSPENDED = false;
 
 -- Create warehouses for tenant ETL
 CREATE WAREHOUSE IF NOT EXISTS smdh_etl_wh
   WAREHOUSE_SIZE = 'small'
-  AUTO_SUSPEND = 
+  AUTO_SUSPEND =
   AUTO_RESUME = true
   INITIALLY_SUSPENDED = false;
 
 CREATE WAREHOUSE IF NOT EXISTS smdh_analytics_wh
   WAREHOUSE_SIZE = 'medium'
-  AUTO_SUSPEND = 
+  AUTO_SUSPEND =
   AUTO_RESUME = true
   INITIALLY_SUSPENDED = false;
 ```
 
- . Snowflake Directory Structure
+. Snowflake Directory Structure
 
 The Snowflake implementation is organised as follows:
 
@@ -569,14 +588,14 @@ infrastructure/snowflake/
      _create_monitoring.sql          Monitoring views and alerts
 ```
 
- . Snowflake Validation Script
+. Snowflake Validation Script
 
 The `validate_setup.sh` script automates the entire Snowflake setup and verification:
 
 ```bash
 !/bin/bash
  Usage: ./validate_setup.sh [tenant_id] [tenant_name] [aws_region] [num_sites]
- Example: ./validate_setup.sh test_tenant "Test Tenant" eu-west- 
+ Example: ./validate_setup.sh test_tenant "Test Tenant" eu-west-
 
  Key features:
  - Validates all required parameters
@@ -592,25 +611,28 @@ The `validate_setup.sh` script automates the entire Snowflake setup and verifica
  - References variables correctly (& for SnowSQL, $ for SQL session)
 ```
 
- Successfully Deployed Configuration
+Successfully Deployed Configuration
 
 As of November , , the following Snowflake resources have been successfully created and validated:
 
 Infrastructure Database:
+
 - Database: `SMDH_INFRASTRUCTURE`
 - Schemas: `TENANT_CONFIGS`, `MONITORING`, `AUDIT`
 - Tables: `tenants`, `sites`, `devices`, `gateway_registry`
 
 Test Tenant Configuration:
+
 - Database: `SMDH_TENANT_TEST_TENANT`
 - Schemas: `RAW`, `NORMALIZED`, `AGGREGATED`, `ANALYTICS`
 - Roles: `smdh_tenant_test_tenant_admin`, `smdh_tenant_test_tenant_user`, `smdh_tenant_test_tenant_readonly`
 - File Formats: `ff_json`, `ff_csv`, `ff_parquet`
 - Stages: `stage_uploads`, `stage_errors`
 
- . Implementation Status Summary
+. Implementation Status Summary
 
- Fully Implemented and Working:
+Fully Implemented and Working:
+
 - Infrastructure database setup (`SMDH_INFRASTRUCTURE`)
 - Tenant database creation (`SMDH_TENANT_<tenant_id>`)
 - All schemas (raw, normalized, aggregated, analytics)
@@ -620,62 +642,102 @@ Test Tenant Configuration:
 - Validation and verification scripts
 - Proper variable handling in all SQL scripts
 
- Partially Implemented:
+Partially Implemented:
+
 - Dynamic tables (DDL created, not yet populated with real data)
 - Tasks and streams (created but not processing real sensor data yet)
 - Monitoring views (structure in place, awaiting real data)
 
-⏳ Not Yet Implemented (Requires Additional Setup):
-- Openflow/Snowpipe connector for Kinesis integration
-- Real-time data ingestion from IoT Core
-- Streamlit portal for tenant analytics
-- Production monitoring and alerting
+✅ Recently Implemented (December 2024):
 
- . Create Openflow Connector Integration
+- Openflow Connector infrastructure for native Kinesis integration
+- Per-tenant Kinesis stream architecture
+- Network rules and External Access Integration for AWS connectivity
+- Openflow connector tracking and monitoring views
+- Comprehensive tenant onboarding documentation
+
+⏳ Pending UI Configuration (Manual Steps Required):
+
+- Create Openflow Deployment in Snowsight UI
+- Create Openflow Runtime with `OPENFLOW_RUNTIME_ROLE_KINESIS`
+- Configure Kinesis Connector with stream-to-table mappings
+- End-to-end testing with real sensor data
+
+⏳ Future Enhancements:
+
+- Streamlit portal for tenant analytics
+- Production monitoring and alerting dashboards
+
+. Openflow Connector for Kinesis Integration
+
+**Architecture Decision**: Use Snowflake Openflow Connector for native Kinesis Data Stream ingestion.
+
+**Per-Tenant Stream Architecture**: Each tenant gets a dedicated Kinesis stream that routes directly to their Snowflake database:
+```
+AWS IoT Core → IoT Rule (per tenant) → Kinesis Stream (per tenant) → Openflow → Tenant Database
+```
+
+Benefits of per-tenant streams:
+- Complete data isolation between tenants
+- Independent scaling per tenant workload
+- Simplified stream-to-table routing
+- Easier debugging and monitoring
+
+**Openflow SQL Setup** (`infrastructure/snowflake/sql/core/03_openflow_connector.sql`):
 
 ```sql
--- Note: This step requires Snowflake Enterprise or higher
--- and Openflow connector to be configured by Snowflake
+-- Creates the following resources:
+-- 1. OPENFLOW_ADMIN role with deployment/runtime privileges
+-- 2. OPENFLOW_RUNTIME_ROLE_KINESIS for connector execution
+-- 3. OPENFLOW database with image repository
+-- 4. Network rules for AWS Kinesis/DynamoDB/STS access
+-- 5. External Access Integration (OPENFLOW_AWS_EAI)
+-- 6. Connector tracking table and monitoring views
+-- 7. Stored procedure: sp_grant_openflow_tenant_access()
 
--- Create connector object (run as account admin)
--- This is a placeholder - actual configuration requires Snowflake support
-CREATE OR REPLACE EXTERNAL VOLUME smdh_kinesis_volume
-  TYPE = S
-  LOCATION = (
-    URL = 's://smdh-openflow-bucket/'
-  );
+-- Run the setup script:
+USE ROLE ACCOUNTADMIN;
+USE WAREHOUSE SMDH_WH;
 
--- Configure connector permissions
-GRANT READ, WRITE ON EXTERNAL VOLUME smdh_kinesis_volume
-  TO ROLE smdh_infrastructure_admin;
-
--- Alternative: Use Snowpipe for S-based ingestion
--- If Kinesis writes to S, you can use Snowpipe instead
-CREATE OR REPLACE PIPE smdh_sensor_data_pipe
-  AUTO_INGEST = TRUE
-  AS
-  COPY INTO smdh_tenant_test_tenant.raw.sensor_readings
-  FROM @smdh_s_stage
-  FILE_FORMAT = (TYPE = 'JSON');
+-- Or use the automated script:
+-- ./infrastructure/snowflake/scripts/setup_openflow.sh
 ```
+
+**Post-SQL UI Configuration** (required in Snowsight):
+
+1. Navigate to **Data** > **Openflow**
+2. Create Deployment: `smdh-openflow-deployment`
+3. Create Runtime: `smdh-kinesis-runtime`
+   - Role: `OPENFLOW_RUNTIME_ROLE_KINESIS`
+   - Warehouse: `SMDH_WH`
+   - External Access: `OPENFLOW_AWS_EAI`
+4. Add Kinesis Connector with stream-to-table mapping
+
+**Stream-to-Table Mapping Example**:
+```
+smdh-abc_manufacturing-stream:SMDH_TENANT_ABC_MANUFACTURING.RAW.sensor_readings,
+smdh-xyz_corp-stream:SMDH_TENANT_XYZ_CORP.RAW.sensor_readings
+```
+
+**Detailed Instructions**: See `docs/deployment/Tenant_Onboarding_Guide.md`
 
 ---
 
- . Tenant Onboarding Procedures
+. Tenant Onboarding Procedures
 
- . Tenant Onboarding Checklist and Timeline
+. Tenant Onboarding Checklist and Timeline
 
-| Phase | Component | Steps | Est. Time |
-| --- | --- | --- | --- |
-| Planning | Business Setup | Gather requirements, SLA definition |  min |
-| Identity | AWS & Snowflake | Create accounts, assign roles |  min |
-| AWS Setup | IoT Core | Thing registry, certificates, policies, rules |  min |
-| Snowflake Setup | Database | Database, schemas, tables, streams, tasks |  min |
-| Application | Portal | Streamlit config, UI customization |  min |
-| Validation | Testing | EE test, monitoring verification |  min |
-| Total | | | ~. hours |
+| Phase           | Component       | Steps                                         | Est. Time |
+| --------------- | --------------- | --------------------------------------------- | --------- |
+| Planning        | Business Setup  | Gather requirements, SLA definition           | min       |
+| Identity        | AWS & Snowflake | Create accounts, assign roles                 | min       |
+| AWS Setup       | IoT Core        | Thing registry, certificates, policies, rules | min       |
+| Snowflake Setup | Database        | Database, schemas, tables, streams, tasks     | min       |
+| Application     | Portal          | Streamlit config, UI customization            | min       |
+| Validation      | Testing         | EE test, monitoring verification              | min       |
+| Total           |                 |                                               | ~. hours  |
 
- . Phase : Gathering Requirements
+. Phase : Gathering Requirements
 
 ```bash
 !/bin/bash
@@ -691,7 +753,7 @@ read -p "Primary contact email: " CONTACT_EMAIL
  Validation
 if ! [[ $TENANT_ID =~ ^[a-z-_]+$ ]]; then
   echo "Error: Tenant ID must be lowercase alphanumeric"
-  exit 
+  exit
 fi
 
  Save to configuration file
@@ -709,9 +771,9 @@ EOF
 echo " Configuration saved to tenant_config_${TENANT_ID}.env"
 ```
 
- . Phase : AWS IoT Setup
+. Phase : AWS IoT Setup
 
- Step .: Create IoT Thing Type
+Step .: Create IoT Thing Type
 
 ```bash
 !/bin/bash
@@ -726,7 +788,7 @@ aws iot create-thing-type \
 echo " IoT Thing Type created"
 ```
 
- Step .: Create IoT Thing Registry Entries
+Step .: Create IoT Thing Registry Entries
 
 ```bash
 !/bin/bash
@@ -755,7 +817,7 @@ for ((site=; site<=$NUM_SITES; site++)); do
 done
 ```
 
- Step .: Generate X. Certificates
+Step .: Generate X. Certificates
 
 ```bash
 !/bin/bash
@@ -788,7 +850,7 @@ done
 cd ../..
 ```
 
- Step .: Create IoT Policy
+Step .: Create IoT Policy
 
 ```bash
 !/bin/bash
@@ -835,7 +897,7 @@ aws iot create-policy \
 echo " IoT Policy created: smdh-policy-${TENANT_ID}"
 ```
 
- Step .: Attach Certificates to Policy
+Step .: Attach Certificates to Policy
 
 ```bash
 !/bin/bash
@@ -863,33 +925,36 @@ for CERT_ARN in $CERTS; do
 done
 ```
 
- Step .: Create IoT Rules Engine Rule
+Step .: Create IoT Rules Engine Rule
 
 ```bash
 !/bin/bash
 source tenant_config_${TENANT_ID}.env
 
- Create IoT rule for tenant
+ Create IoT rule for tenant - routes to tenant's dedicated Kinesis stream
 cat > iot-rule-${TENANT_ID}.json << 'EOF'
 {
-  "sql": "SELECT , topic() as tenant_id, topic() as site_id, timestamp() as iot_timestamp, clientId() as device_id FROM 'smdh/+/+/sensor-data' WHERE topic() = '${TENANT_ID}' AND timestamp IS NOT NULL",
+  "sql": "SELECT *, topic(2) as tenant_id, topic(3) as site_id, timestamp() as iot_timestamp, clientId() as device_id FROM 'smdh/${TENANT_ID}/+/sensor-data'",
   "actions": [
     {
       "kinesis": {
-        "roleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/iot-core-kinesis-role",
-        "streamName": "smdh-sensor-data-stream",
-        "partitionKey": "${TENANT_ID}"
+        "roleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/smdh-iot-kinesis-role",
+        "streamName": "smdh-${TENANT_ID}-stream",
+        "partitionKey": "${topic(3)}"
       }
     }
   ],
   "errorAction": {
     "republish": {
-      "roleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/iot-core-kinesis-role",
+      "roleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/smdh-iot-kinesis-role",
       "topic": "smdh/errors/${TENANT_ID}"
     }
   }
 }
 EOF
+
+ NOTE: Each tenant gets a dedicated stream (smdh-{tenant_id}-stream)
+ Partition key is site_id for ordering within the tenant
 
 aws iot create-topic-rule \
   --rule-name "smdh_route_${TENANT_ID}" \
@@ -899,11 +964,12 @@ aws iot create-topic-rule \
 echo " IoT Rule created: smdh_route_${TENANT_ID}"
 ```
 
- . Phase : Snowflake Setup
+. Phase : Snowflake Setup
 
- Step .: Create Tenant Database
+Step .: Create Tenant Database
 
 > Important: Snowflake has two variable systems:
+>
 > - SnowSQL variables (`&variable`): Client-side substitution via `-D` flag
 > - SQL session variables (`$variable`): Server-side variables created with `SET`
 
@@ -935,7 +1001,7 @@ SET database_name = 'smdh_tenant_' || '&tenant_id';  -- Creates SQL session vari
 
 -- Create database with proper variable reference
 CREATE DATABASE IF NOT EXISTS IDENTIFIER($database_name)
-    DATA_RETENTION_TIME_IN_DAYS = 
+    DATA_RETENTION_TIME_IN_DAYS =
     COMMENT = 'SMDH Tenant Database for &tenant_name. Isolated database per tenant for complete data separation.';
 
 -- Use the database
@@ -943,23 +1009,23 @@ USE DATABASE IDENTIFIER($database_name);
 
 -- Create schemas
 CREATE SCHEMA IF NOT EXISTS raw
-    DATA_RETENTION_TIME_IN_DAYS = 
+    DATA_RETENTION_TIME_IN_DAYS =
     COMMENT = 'Raw ingested sensor data from IoT devices. Minimal transformation, preserves original payload structure.';
 
 CREATE SCHEMA IF NOT EXISTS normalized
-    DATA_RETENTION_TIME_IN_DAYS = 
+    DATA_RETENTION_TIME_IN_DAYS =
     COMMENT = 'Cleaned, normalized, and validated data. Ready for analytics and aggregation.';
 
 CREATE SCHEMA IF NOT EXISTS aggregated
-    DATA_RETENTION_TIME_IN_DAYS = 
+    DATA_RETENTION_TIME_IN_DAYS =
     COMMENT = 'Pre-aggregated metrics and KPIs. Used for dashboards and reporting. Longer retention for historical analysis.';
 
 CREATE SCHEMA IF NOT EXISTS analytics
-    DATA_RETENTION_TIME_IN_DAYS = 
+    DATA_RETENTION_TIME_IN_DAYS =
     COMMENT = 'Analytics views, ML model results, and business intelligence objects.';
 ```
 
- Step .: Create Tables
+Step .: Create Tables
 
 ```sql
 -- Set tenant ID variable
@@ -1031,7 +1097,7 @@ CREATE TABLE IF NOT EXISTS smdh_tenant_&{TENANT_ID}.normalized.sensor_metrics (
 CLUSTER BY (DATE_TRUNC('day', timestamp), sensor_id);
 ```
 
- Step .: Create Streams for CDC
+Step .: Create Streams for CDC
 
 ```sql
 SET TENANT_ID = 'company_a';
@@ -1048,7 +1114,7 @@ CREATE STREAM IF NOT EXISTS smdh_tenant_&{TENANT_ID}.raw.uploaded_files_stream
   COMMENT = 'Captures file upload events';
 ```
 
- Step .: Create Processing Tasks
+Step .: Create Processing Tasks
 
 ```sql
 SET TENANT_ID = 'company_a';
@@ -1080,7 +1146,7 @@ AS
 ALTER TASK smdh_tenant_&{TENANT_ID}.raw.process_sensor_data RESUME;
 ```
 
- Step .: Create Dynamic Tables for Aggregation
+Step .: Create Dynamic Tables for Aggregation
 
 ```sql
 SET TENANT_ID = 'company_a';
@@ -1121,7 +1187,7 @@ FROM smdh_tenant_&{TENANT_ID}.normalized.sensor_metrics
 GROUP BY sensor_id, tenant_id, DATE_TRUNC('day', timestamp), metric_name;
 ```
 
- Step .: Create Roles and User Access
+Step .: Create Roles and User Access
 
 ```sql
 SET TENANT_ID = 'company_a';
@@ -1163,7 +1229,7 @@ CREATE USER IF NOT EXISTS john.smith_&{TENANT_ID}
 GRANT ROLE tenant_&{TENANT_ID}_user TO USER john.smith_&{TENANT_ID};
 ```
 
- Step .: Configure Data Retention
+Step .: Configure Data Retention
 
 ```sql
 SET TENANT_ID = 'company_a';
@@ -1179,9 +1245,9 @@ ALTER TABLE smdh_tenant_&{TENANT_ID}.normalized.sensor_metrics
 
 ---
 
- . Table Definitions
+. Table Definitions
 
- . Data Model Overview
+. Data Model Overview
 
 ```
 smdh_tenant_{tenant_id}
@@ -1201,11 +1267,11 @@ smdh_tenant_{tenant_id}
      [custom metrics]
 ```
 
- . Complete Table Schema Reference
+. Complete Table Schema Reference
 
 See section . above for full CREATE TABLE statements.
 
- . Indexing Strategy
+. Indexing Strategy
 
 ```sql
 -- Clustering keys are defined in CREATE TABLE statements
@@ -1221,9 +1287,9 @@ CREATE INDEX idx_gateway_connections
 
 ---
 
- . Gateway Device Setup
+. Gateway Device Setup
 
- . Milesight UG LoRaWAN Gateway Setup
+. Milesight UG LoRaWAN Gateway Setup
 
 Physical Configuration:
 
@@ -1236,7 +1302,7 @@ MQTT Configuration in Web UI:
 
 ```
 MQTT Server Address: <IOT_ENDPOINT>
-MQTT Server Port: 
+MQTT Server Port:
 Enable TLS: YES
 Protocol Version: MQTT v..
 
@@ -1253,7 +1319,7 @@ MQTT Publish Topic: smdh/{tenant_id}/sensor-data
 MQTT Subscribe Topic: smdh/{tenant_id}/commands/
 QoS:  (At least once)
 Keep Alive:  seconds
-Offline Message Buffer: 
+Offline Message Buffer:
 
 Reconnect Interval:  seconds
 Max Reconnect Interval:  seconds
@@ -1266,7 +1332,7 @@ Steps:
 . Set MQTT server address to {IOT_ENDPOINT}
 . Verify connection shows "Connected"
 
- . DevTank OpenSmartMonitor (OSM) Wi-Fi Setup
+. DevTank OpenSmartMonitor (OSM) Wi-Fi Setup
 
 Network Configuration:
 
@@ -1280,7 +1346,7 @@ MQTT Configuration:
 
 ```
 MQTT Broker: {IOT_ENDPOINT}
-Port: 
+Port:
 Protocol: MQTT over TLS
 
 Client ID: smdh-osm-{tenant_id}-{site_id}
@@ -1296,11 +1362,11 @@ Publish Topics:
 - Energy: smdh/{tenant_id}/devtank-data/energy
 - Environment: smdh/{tenant_id}/devtank-data/environment
 
-QoS: 
+QoS:
 Frequency:  minutes (configurable)
 ```
 
- . Certificate Deployment to Devices
+. Certificate Deployment to Devices
 
 ```bash
 !/bin/bash
@@ -1327,7 +1393,7 @@ ssh -i gateway_key.pem ubuntu@${GATEWAY_IP} << EOF
   systemctl restart mqtt-client
 
    Verify connection
-  journalctl -u mqtt-client -n 
+  journalctl -u mqtt-client -n
 EOF
 
 echo " Certificates deployed to ${GATEWAY_IP}"
@@ -1335,9 +1401,9 @@ echo " Certificates deployed to ${GATEWAY_IP}"
 
 ---
 
- . Monitoring and Alerting
+. Monitoring and Alerting
 
- . CloudWatch Dashboard Setup
+. CloudWatch Dashboard Setup
 
 ```bash
 !/bin/bash
@@ -1388,7 +1454,7 @@ aws cloudwatch put-dashboard \
 echo " CloudWatch dashboard created"
 ```
 
- . CloudWatch Alarms
+. CloudWatch Alarms
 
 ```bash
 !/bin/bash
@@ -1439,7 +1505,7 @@ aws cloudwatch put-metric-alarm \
 echo " CloudWatch alarms created"
 ```
 
- . SNS Topics for Alerts
+. SNS Topics for Alerts
 
 ```bash
 !/bin/bash
@@ -1461,7 +1527,7 @@ echo " SNS topic and subscription created"
 echo "Note: Confirm subscription via email"
 ```
 
- . Snowflake Monitoring
+. Snowflake Monitoring
 
 ```sql
 -- Query ingestion metrics
@@ -1493,14 +1559,14 @@ LIMIT ;
 
 ---
 
- . Automation Scripts
+. Automation Scripts
 
- . Complete Tenant Onboarding Script
+. Complete Tenant Onboarding Script
 
 ```bash
 !/bin/bash
  SMDH Tenant Onboarding Automation Script
- Usage: ./onboard-tenant.sh company_a "Company A Ltd"   
+ Usage: ./onboard-tenant.sh company_a "Company A Ltd"
 
 set -e
 
@@ -1515,7 +1581,7 @@ AWS_REGION=${AWS_REGION:-eu-west-}
  Validation
 if ! [[ $TENANT_ID =~ ^[a-z-_]+$ ]]; then
   echo " Error: Tenant ID must be lowercase alphanumeric"
-  exit 
+  exit
 fi
 
 echo " Starting SMDH Tenant Onboarding"
@@ -1629,7 +1695,7 @@ SET database_name = 'smdh_tenant_' || '&tenant_id';
 
 -- Create database with proper variable reference
 CREATE DATABASE IF NOT EXISTS IDENTIFIER(\$database_name)
-    DATA_RETENTION_TIME_IN_DAYS = 
+    DATA_RETENTION_TIME_IN_DAYS =
     COMMENT = 'SMDH Tenant Database. Isolated database per tenant for complete data separation.';
 
 -- Use the database
@@ -1667,21 +1733,42 @@ EOSQL
 echo " Snowflake setup complete"
 echo ""
 
- Step : Create IoT Rules
+ Step : Create Per-Tenant Kinesis Stream
+echo " Step : Creating dedicated Kinesis stream for tenant..."
+
+aws kinesis create-stream \
+  --stream-name "smdh-${TENANT_ID}-stream" \
+  --stream-mode-details StreamMode=ON_DEMAND \
+  --region $AWS_REGION
+
+aws kinesis wait stream-exists \
+  --stream-name "smdh-${TENANT_ID}-stream" \
+  --region $AWS_REGION
+
+echo " Kinesis stream created: smdh-${TENANT_ID}-stream"
+echo ""
+
+ Step : Create IoT Rules (routes to tenant's dedicated stream)
 echo " Step : Creating IoT Rules..."
 
 cat > iot-rule.json << 'EOF'
 {
-  "sql": "SELECT , '${TENANT_ID}' as tenant_id FROM 'smdh/${TENANT_ID}/+'",
+  "sql": "SELECT *, topic(2) as tenant_id, topic(3) as site_id, timestamp() as iot_timestamp FROM 'smdh/${TENANT_ID}/+/sensor-data'",
   "actions": [
     {
       "kinesis": {
-        "roleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/iot-core-kinesis-role",
-        "streamName": "smdh-sensor-data-stream",
-        "partitionKey": "${TENANT_ID}"
+        "roleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/smdh-iot-kinesis-role",
+        "streamName": "smdh-${TENANT_ID}-stream",
+        "partitionKey": "${topic(3)}"
       }
     }
-  ]
+  ],
+  "errorAction": {
+    "republish": {
+      "roleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/smdh-iot-kinesis-role",
+      "topic": "smdh/errors/${TENANT_ID}"
+    }
+  }
 }
 EOF
 
@@ -1690,7 +1777,7 @@ aws iot create-topic-rule \
   --topic-rule-payload file://iot-rule.json \
   --region $AWS_REGION
 
-echo " IoT Rules created"
+echo " IoT Rules created (routing to smdh-${TENANT_ID}-stream)"
 echo ""
 
  Step : Create Alerts
@@ -1718,19 +1805,21 @@ rm -f iot-policy.json iot-rule.json
 echo " Tenant onboarding complete!"
 echo ""
 echo " Deliverables:"
+echo "    Kinesis Stream: smdh-${TENANT_ID}-stream (dedicated per-tenant)"
 echo "    Certificates: certificates/${TENANT_ID}/"
 echo "    Snowflake Database: smdh_tenant_${TENANT_ID}"
-echo "    IoT Core configured with tenant policies"
+echo "    IoT Core configured with tenant policies and rules"
 echo "    Monitoring and alerts enabled"
 echo ""
 echo " Next steps:"
 echo "   . Distribute certificates to gateways"
+echo "   . Create Openflow connector in Snowsight for smdh-${TENANT_ID}-stream"
 echo "   . Configure gateway MQTT settings with endpoint"
 echo "   . Test data flow with sample messages"
 echo "   . Verify data appears in Snowflake"
 ```
 
- . Certificate Rotation Script
+. Certificate Rotation Script
 
 ```bash
 !/bin/bash
@@ -1767,9 +1856,9 @@ echo "Certificate rotation scheduled. Old cert will be deactivated on $(date -u 
 
 ---
 
- . Validation and Testing
+. Validation and Testing
 
- . End-to-End Test Procedure
+. End-to-End Test Procedure
 
 ```bash
 !/bin/bash
@@ -1809,7 +1898,7 @@ echo ""
 echo " Validation complete!"
 ```
 
- . Data Quality Checks
+. Data Quality Checks
 
 ```sql
 -- Monitor data ingestion quality
@@ -1837,9 +1926,9 @@ GROUP BY sensor_id;
 
 ---
 
- . Rollback Procedures
+. Rollback Procedures
 
- . Complete Tenant Offboarding
+. Complete Tenant Offboarding
 
 ```bash
 !/bin/bash
@@ -1850,7 +1939,7 @@ read -p "Are you sure you want to offboard $TENANT_ID? (yes/no): " confirmation
 
 if [ "$confirmation" != "yes" ]; then
   echo "Offboarding cancelled"
-  exit 
+  exit
 fi
 
 AWS_REGION=${AWS_REGION:-eu-west-}
@@ -1909,7 +1998,7 @@ echo "   Backup available: smdh_tenant_${TENANT_ID}_backup"
 echo "   Exported data: ~/offboard_${TENANT_ID}/"
 ```
 
- . Disaster Recovery
+. Disaster Recovery
 
 ```sql
 -- Restore from backup
@@ -1926,20 +2015,20 @@ CREATE STREAM smdh_tenant_company_a.raw.sensor_readings_stream
 
 ---
 
- . Cost Estimates
+. Cost Estimates
 
- . AWS Pricing Breakdown ( Tenants, M messages/day)
+. AWS Pricing Breakdown ( Tenants, M messages/day)
 
-| Service | Usage | Monthly Cost | Annual Cost | Per-Tenant/Month |
-|---------|-------|--------------|-------------|-----------------|
-| IoT Core | M messages/day | ~$ | ~$, | ~$. |
-| Kinesis | On-demand,  shard | ~$ | ~$ | ~$. |
-| Secrets Manager |  secret | ~$. | ~$. | ~$. |
-| CloudWatch | GB logs/month | ~$ | ~$, | ~$. |
-| IAM Roles | Minimal | ~$ | ~$ | ~$. |
-| AWS Total | | ~$/mo | ~$,/year | ~$. |
+| Service         | Usage            | Monthly Cost | Annual Cost | Per-Tenant/Month |
+| --------------- | ---------------- | ------------ | ----------- | ---------------- |
+| IoT Core        | M messages/day   | ~$           | ~$,         | ~$.              |
+| Kinesis         | On-demand, shard | ~$           | ~$          | ~$.              |
+| Secrets Manager | secret           | ~$.          | ~$.         | ~$.              |
+| CloudWatch      | GB logs/month    | ~$           | ~$,         | ~$.              |
+| IAM Roles       | Minimal          | ~$           | ~$          | ~$.              |
+| AWS Total       |                  | ~$/mo        | ~$,/year    | ~$.              |
 
- . Snowflake Cost Estimation
+. Snowflake Cost Estimation
 
 ```
 Snowflake pricing varies by edition and region.
@@ -1954,7 +2043,7 @@ Estimated Snowflake: $,/month or $,/year
 Estimated per-tenant: $/month or $,/year
 ```
 
- . Cost Optimization Tips
+. Cost Optimization Tips
 
 . Use Kinesis on-demand - Scales to zero when no data
 . Auto-suspend Snowflake warehouses - Save % on idle time
@@ -1965,9 +2054,9 @@ Estimated per-tenant: $/month or $,/year
 
 ---
 
- Appendix A: Command Reference
+Appendix A: Command Reference
 
- AWS IoT Core Commands
+AWS IoT Core Commands
 
 ```bash
  List things
@@ -1995,7 +2084,7 @@ aws iot get-policy --policy-name <policy-name>
 aws iot list-topic-rules
 ```
 
- Snowflake Commands
+Snowflake Commands
 
 ```sql
 -- List databases
@@ -2019,9 +2108,9 @@ SELECT  FROM SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY LIMIT ;
 
 ---
 
- Appendix B: Troubleshooting
+Appendix B: Troubleshooting
 
- Snowflake Variable Reference Issues
+Snowflake Variable Reference Issues
 
 Symptoms: "Variable is not defined" errors in SnowSQL
 
@@ -2032,14 +2121,15 @@ Solutions:
 . SQL session variables (`$variable`): Create with `SET`, reference with `$`
 . Always use `-o variable_substitution=true` when using `&` variables
 . Example of correct usage:
-   ```sql
-   -- Create SQL session variable
-   SET database_name = 'smdh_tenant_' || '&tenant_id';
-   -- Use SQL session variable with $
-   USE DATABASE IDENTIFIER($database_name);
-   ```
 
- Snowflake CREATE DATABASE/ROLE Comment Syntax Errors
+```sql
+-- Create SQL session variable
+SET database_name = 'smdh_tenant_' || '&tenant_id';
+-- Use SQL session variable with $
+USE DATABASE IDENTIFIER($database_name);
+```
+
+Snowflake CREATE DATABASE/ROLE Comment Syntax Errors
 
 Symptoms: "Syntax error unexpected '('" when using CONCAT in COMMENT clause
 
@@ -2050,18 +2140,18 @@ Solutions:
 . Correct: `COMMENT = 'text ' || variable || ' text'`
 . Also Correct: `COMMENT = 'Static text with &snowsql_variable substitution'`
 
- Issue: Gateway Cannot Connect to IoT Core
+Issue: Gateway Cannot Connect to IoT Core
 
 Symptoms: Connection timeout, "certificate verify failed"
 
 Solutions:
 . Verify certificate files are correct (check certificate dates)
-. Ensure TLS port  is not blocked by firewall
+. Ensure TLS port is not blocked by firewall
 . Verify IoT endpoint address is correct
 . Check certificate permissions ( for private key)
 . Validate certificate against root CA
 
- Issue: No Data Appearing in Snowflake
+Issue: No Data Appearing in Snowflake
 
 Symptoms: Records published to MQTT but not in sensor_readings table
 
@@ -2072,7 +2162,7 @@ Solutions:
 . Look at task execution history for errors
 . Verify Openflow connector configuration
 
- Issue: High Latency in Data Pipeline
+Issue: High Latency in Data Pipeline
 
 Symptoms: Data takes > minutes to appear in Snowflake
 
@@ -2083,12 +2173,42 @@ Solutions:
 . Check for database locks
 . Monitor network latency to AWS
 
+Issue: Deprecated Kinesis Integration Script
+
+Symptoms: Running `setup_kinesis_integration.sh` shows deprecation warning or SQL errors
+
+Root Cause: The original script attempted to use Snowpipe syntax to connect directly to Kinesis, which is not supported. Snowflake requires the Openflow Connector for native Kinesis integration.
+
+Solution:
+. **DO NOT USE** `infrastructure/snowflake/scripts/setup_kinesis_integration.sh` - it is deprecated
+. **USE INSTEAD**: Snowflake Openflow Connector approach:
+   - Run `infrastructure/snowflake/sql/core/03_openflow_connector.sql` in Snowsight
+   - Complete UI configuration in Snowsight (Data > Openflow)
+   - Follow `docs/deployment/Tenant_Onboarding_Guide.md`
+
+The correct architecture uses:
+- Per-tenant Kinesis streams (not a shared stream)
+- Snowflake Openflow Connector (not Snowpipe)
+- Stream-to-table routing via Openflow configuration
+
+Issue: Openflow External Access Integration Fails
+
+Symptoms: "External access is not supported for trial accounts" error
+
+Root Cause: External Access Integrations require a paid Snowflake account
+
+Solution:
+. Upgrade from trial to paid Snowflake account
+. After upgrading, enroll in MFA (required for paid accounts)
+. Re-run the Openflow setup SQL script
+
 ---
 
- Document History
+Document History
 
-| Date | Version | Changes | Author |
-|------|---------|---------|--------|
-| -- | . | Updated Snowflake configuration with validated scripts, added variable reference documentation, included troubleshooting for common SQL issues | Platform Team |
-| -- | . | Added Terraform deployment section with actual deployment results | Platform Team |
-| -- | . | Initial release with manual CLI procedures | Platform Team |
+| Date | Version | Changes                                                                                                                                        | Author        |
+| ---- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| 2024-12-02 | 2.0     | Added Snowflake Openflow Connector for native Kinesis integration, documented per-tenant stream architecture decision, updated tenant onboarding with Openflow configuration | Platform Team |
+| --   | 1.3     | Updated Snowflake configuration with validated scripts, added variable reference documentation, included troubleshooting for common SQL issues | Platform Team |
+| --   | 1.2     | Added Terraform deployment section with actual deployment results                                                                              | Platform Team |
+| --   | 1.1     | Initial release with manual CLI procedures                                                                                                     | Platform Team |

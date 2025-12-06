@@ -45,61 +45,396 @@ This directory contains all SQL scripts and automation tools needed to:
  Directory Structure
 
 ```
-infrastructure/snowflake/
-├── scripts/                           # Shell scripts (main entry points)
-│   ├── snowflake.sh                   # Core infrastructure: deploy/drop/status
-│   ├── onboard_tenant.sh              # Automated tenant onboarding
-│   ├── validate_setup.sh              # Full validation with tenant setup
-│   ├── setup_kinesis_integration.sh   # Configure AWS Kinesis connector
-│   └── sync_aws_iot_metadata.sh       # Sync IoT device metadata
+infrastructure/
+├── scripts/                           # Main automation scripts
+│   ├── onboard_tenant_full.sh         # ** FULL END-TO-END TENANT ONBOARDING **
+│   └── validate_tenant.sh             # Validate tenant setup (AWS + Snowflake)
 │
-├── sql/                               # SQL scripts
-│   ├── core/                          # Core infrastructure scripts
-│   │   ├── 00_drop_all.sql            # Clean teardown
-│   │   ├── 00_prerequisites.sql       # Environment validation
-│   │   ├── 01_infrastructure_setup.sql # Infrastructure database
-│   │   ├── 02_shared_resources.sql    # Warehouses and roles
-│   │   └── 03_openflow_connector.sql  # Kinesis integration
+├── snowflake/
+│   ├── scripts/                       # Snowflake-specific scripts
+│   │   ├── snowflake.sh               # Core infrastructure: deploy/drop/status
+│   │   ├── onboard_tenant.sh          # Snowflake-only tenant onboarding
+│   │   ├── validate_setup.sh          # Full validation with tenant setup
+│   │   ├── setup_openflow.sh          # Openflow infrastructure setup
+│   │   ├── setup_kinesis_integration.sh # Legacy Kinesis connector setup
+│   │   └── sync_aws_iot_metadata.sh   # Sync IoT device metadata
 │   │
-│   ├── tenant/                        # Per-tenant setup scripts
-│   │   ├── 10_create_tenant_database.sql
-│   │   ├── 11_create_schemas.sql
-│   │   ├── 12_create_tables.sql
-│   │   ├── 13_create_streams.sql
-│   │   ├── 14_create_tasks.sql
-│   │   ├── 15_create_dynamic_tables.sql
-│   │   ├── 16_create_roles.sql
-│   │   └── 17_create_monitoring.sql
+│   ├── sql/                           # SQL scripts
+│   │   ├── core/                      # Core infrastructure scripts
+│   │   │   ├── 00_drop_all.sql        # Clean teardown
+│   │   │   ├── 00_prerequisites.sql   # Environment validation
+│   │   │   ├── 01_infrastructure_setup.sql # Infrastructure database
+│   │   │   ├── 02_shared_resources.sql    # Warehouses and roles
+│   │   │   └── 03_openflow_connector.sql  # ** OPENFLOW KINESIS INTEGRATION **
+│   │   │
+│   │   ├── tenant/                    # Per-tenant setup scripts
+│   │   │   ├── 10_create_tenant_database.sql
+│   │   │   ├── 11_create_schemas.sql
+│   │   │   ├── 12_create_tables.sql
+│   │   │   ├── 13_create_streams.sql
+│   │   │   ├── 14_create_tasks.sql
+│   │   │   ├── 15_create_dynamic_tables.sql
+│   │   │   ├── 16_create_roles.sql
+│   │   │   └── 17_create_monitoring.sql
+│   │   │
+│   │   └── utility/                   # Utility SQL scripts
+│   │       ├── check_current_state.sql
+│   │       ├── check_role.sql
+│   │       └── validate_tenant.sql
 │   │
-│   └── utility/                       # Utility SQL scripts
-│       ├── check_current_state.sql
-│       ├── check_role.sql
-│       └── validate_tenant.sql
+│   └── README.md
 │
-└── README.md
+└── terraform/                         # AWS infrastructure
 ```
 
 ## Quick Start
 
 ```bash
-cd infrastructure/snowflake/scripts
-
-# 1. Deploy core infrastructure
+# Set credentials
 export SNOWSQL_PWD='your_password'
-./snowflake.sh deploy
+export AWS_REGION='eu-west-2'
 
-# 2. Onboard a tenant
-./onboard_tenant.sh --tenant-id mycompany --tenant-name "My Company" --num-sites 3
+# OPTION 1: Full automated tenant onboarding (AWS + Snowflake)
+cd infrastructure/scripts
+./onboard_tenant_full.sh \
+  --tenant-id acme_corp \
+  --tenant-name "ACME Corporation" \
+  --num-sites 5
 
-# 3. Configure Kinesis (after terraform apply)
-./setup_kinesis_integration.sh
+# OPTION 2: Snowflake-only onboarding (if AWS already configured)
+cd infrastructure/snowflake/scripts
+./onboard_tenant.sh \
+  --tenant-id acme_corp \
+  --tenant-name "ACME Corporation" \
+  --num-sites 5 \
+  --snowflake-account $SNOWFLAKE_ACCOUNT \
+  --snowflake-user $SNOWFLAKE_USER
 
-# Check status
+# Validate tenant setup
+cd infrastructure/scripts
+./validate_tenant.sh --tenant-id acme_corp
+
+# Check Snowflake status
+cd infrastructure/snowflake/scripts
 ./snowflake.sh status
-
-# Drop everything (destructive!)
-./snowflake.sh drop
 ```
+
+---
+
+## Snowflake Openflow Integration (Kinesis)
+
+### Overview
+
+SMDH uses **Snowflake Openflow** to ingest data from AWS Kinesis Data Streams. This provides:
+- Native Kinesis integration (no external ETL tools)
+- Sub-second latency
+- Automatic checkpointing via DynamoDB
+- Per-tenant stream isolation
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         DATA FLOW ARCHITECTURE                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────────────────┐  │
+│  │ IoT Devices  │───▶│ AWS IoT Core │───▶│ Kinesis Data Stream          │  │
+│  │ (MQTT)       │    │ (Rules)      │    │ smdh-{tenant_id}-stream      │  │
+│  └──────────────┘    └──────────────┘    └──────────────┬───────────────┘  │
+│                                                         │                   │
+│                                                         ▼                   │
+│                              ┌───────────────────────────────────────────┐  │
+│                              │     SNOWFLAKE OPENFLOW                    │  │
+│                              │  ┌─────────────────────────────────────┐  │  │
+│                              │  │  Deployment: smdh-openflow-deployment│  │  │
+│                              │  │  Runtime: smdh-kinesis-runtime       │  │  │
+│                              │  │  Role: OPENFLOW_RUNTIME_ROLE_KINESIS │  │  │
+│                              │  │  Integration: OPENFLOW_AWS_EAI       │  │  │
+│                              │  └─────────────────────────────────────┘  │  │
+│                              └───────────────┬───────────────────────────┘  │
+│                                              │                              │
+│                    ┌─────────────────────────┼─────────────────────────┐    │
+│                    ▼                         ▼                         ▼    │
+│   ┌────────────────────────┐ ┌────────────────────────┐ ┌────────────────┐ │
+│   │ SMDH_TENANT_ACME_CORP  │ │ SMDH_TENANT_XYZ_INC    │ │ SMDH_TENANT_...│ │
+│   │ .RAW.SENSOR_READINGS   │ │ .RAW.SENSOR_READINGS   │ │ .RAW.SENSOR_...│ │
+│   └────────────────────────┘ └────────────────────────┘ └────────────────┘ │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### What's Automated vs Manual
+
+| Component | Automated | Manual (One-Time) |
+|-----------|-----------|-------------------|
+| AWS Kinesis Stream | ✅ `onboard_tenant_full.sh` | - |
+| AWS IAM Role | ✅ `onboard_tenant_full.sh` | - |
+| AWS IoT Rule | ✅ `onboard_tenant_full.sh` | - |
+| Snowflake Tenant Database | ✅ `onboard_tenant_full.sh` | - |
+| Openflow SQL Resources | ✅ `03_openflow_connector.sql` | - |
+| Openflow Access Grants | ✅ `sp_grant_openflow_tenant_access()` | - |
+| Connector Registration | ✅ `onboard_tenant_full.sh` | - |
+| **Openflow Deployment** | ❌ | Snowsight UI (once) |
+| **Openflow Runtime** | ❌ | Snowsight UI (once) |
+| **Kinesis Connector Config** | ❌ | Snowsight UI (per tenant) |
+
+### Step-by-Step Setup
+
+#### Step 1: Run Core Infrastructure SQL (One-Time)
+
+```bash
+# Run in Snowsight or via SnowSQL
+cd infrastructure/snowflake/sql/core
+
+# Prerequisites
+snowsql -f 00_prerequisites.sql
+
+# Infrastructure database
+snowsql -f 01_infrastructure_setup.sql
+
+# Shared resources (warehouse, roles)
+snowsql -f 02_shared_resources.sql
+
+# Openflow connector infrastructure
+snowsql -f 03_openflow_connector.sql
+```
+
+**What `03_openflow_connector.sql` creates:**
+
+| Resource | Name | Purpose |
+|----------|------|---------|
+| Role | `OPENFLOW_ADMIN` | Administer Openflow deployments |
+| Role | `OPENFLOW_RUNTIME_ROLE_KINESIS` | Runtime role for connectors |
+| Database | `OPENFLOW` | Image repository for containers |
+| Network Rule | `OPENFLOW_AWS_EU_WEST_2_RULE` | Egress to Kinesis/DynamoDB/STS |
+| Integration | `OPENFLOW_AWS_EAI` | External access integration |
+| Table | `openflow_connectors` | Connector tracking/registry |
+| Procedure | `sp_grant_openflow_tenant_access()` | Grant tenant DB access |
+| Views | `v_openflow_connector_status` | Monitoring views |
+
+#### Step 2: Create Openflow Deployment (Snowsight UI - One-Time)
+
+1. Open **Snowsight** → **Data** → **Openflow**
+2. Click **Create Deployment**
+3. Configure:
+   - **Name**: `smdh-openflow-deployment`
+   - **Type**: Snowflake Deployment (managed)
+4. Click **Create**
+
+#### Step 3: Create Runtime (Snowsight UI - One-Time)
+
+1. In your deployment, click **Create Runtime**
+2. Configure:
+   - **Name**: `smdh-kinesis-runtime`
+   - **Role**: `OPENFLOW_RUNTIME_ROLE_KINESIS`
+   - **Warehouse**: `SMDH_WH`
+   - **External Access Integration**: `OPENFLOW_AWS_EAI`
+3. Click **Create**
+
+#### Step 4: Onboard a Tenant (Automated)
+
+```bash
+cd infrastructure/scripts
+
+./onboard_tenant_full.sh \
+  --tenant-id acme_corp \
+  --tenant-name "ACME Corporation" \
+  --num-sites 5
+```
+
+This creates:
+- AWS Kinesis stream: `smdh-acme_corp-stream`
+- AWS IAM role: `smdh-openflow-acme_corp-role`
+- AWS IoT rule: `smdh_acme_corp_to_kinesis`
+- Snowflake database: `SMDH_TENANT_ACME_CORP`
+- Grants Openflow access to tenant database
+- Registers connector in tracking table
+
+#### Step 5: Add Kinesis Connector (Snowsight UI - Per Tenant)
+
+1. In `smdh-kinesis-runtime`, click **Add Connector**
+2. Select **Kinesis Data Streams: JSON modularized**
+3. **Enter the process group** by double-clicking it
+
+4. Configure **AWSCredentialsProviderControllerService** (Access Keys Required):
+
+| Parameter | Value |
+|-----------|-------|
+| AWS Access Key ID | `<your-access-key-id>` |
+| AWS Secret Access Key | `<your-secret-access-key>` |
+
+> **CRITICAL**: Openflow Kinesis connector does **NOT** support IAM Role Assumption. You must create a dedicated IAM user with access keys:
+> ```bash
+> aws iam create-user --user-name smdh-openflow-kinesis-user
+> aws iam create-access-key --user-name smdh-openflow-kinesis-user
+> ```
+> See `docs/deployment/Openflow_Kinesis_Configuration_Guide.md` for the required IAM policy.
+
+5. Configure **Kinesis Source Parameters**:
+
+| Parameter | Value |
+|-----------|-------|
+| AWS Region | `eu-west-2` |
+| Stream Name | `smdh-acme_corp-stream` |
+| Application Name | `smdh-openflow-acme_corp` |
+| Initial Position | `TRIM_HORIZON` (all data) or `LATEST` (new only) |
+| **Consumer Type** | **`POLLING`** (Shared Throughput) |
+| Metrics Publishing | `None` |
+
+> **CRITICAL**: Consumer Type MUST be `POLLING` (Shared Throughput). Enhanced Fan-Out causes `InterruptedException` errors during initialization.
+
+6. Configure **Streaming Destination**:
+
+| Parameter | Value |
+|-----------|-------|
+| Snowflake Account | `<org>-<account>` (e.g., `qqoylnv-zy42691`) |
+| Database | `SMDH_TENANT_ACME_CORP` |
+| Schema | `RAW` |
+| **Authentication Strategy** | **`SNOWFLAKE_SESSION_TOKEN`** |
+| Role | `OPENFLOW_RUNTIME_ROLE_KINESIS` |
+| Warehouse | `SMDH_WH` |
+
+> **IMPORTANT**: Use `SNOWFLAKE_SESSION_TOKEN` authentication. Do NOT configure private key - Openflow runs inside Snowflake and uses session tokens automatically.
+
+7. Enable all **Controller Services** in each process group
+
+8. **Start** the flow from the parent process group level
+
+#### Step 6: Deploy Data Routing Task
+
+After Openflow is ingesting data, deploy the routing task to distribute data to typed sensor tables:
+
+```bash
+cd infrastructure/snowflake/sql/tenant
+snowsql -a <account> -u <user> -r ACCOUNTADMIN -w SMDH_WH \
+  -f 14_create_routing_task.sql \
+  --variable tenant_id='acme_corp'
+```
+
+This creates:
+- `OPENFLOW_LANDING_STREAM` - CDC stream on Openflow landing table
+- `TASK_ROUTE_SENSOR_DATA` - Runs every minute when stream has data
+- `sp_route_sensor_data()` - Routes data to typed tables
+- `sp_backfill_typed_tables()` - Backfill historical data
+
+**Data Flow:**
+```
+Openflow Landing Table ("SMDH-ACME_CORP-STREAM")
+          ↓ (Stream + Task)
+    ┌─────┴─────┬──────────────┬──────────────┬──────────────┐
+    ↓           ↓              ↓              ↓              ↓
+SENSOR_     ENVIRONMENTAL   VIBRATION      CLAMP        DEVICE
+READINGS    _SENSOR_...     _SENSOR_...    _SENSOR_...  _STATUS
+```
+
+### Adding More Tenants
+
+For subsequent tenants, run:
+
+```bash
+# 1. Automated AWS + Snowflake setup
+./onboard_tenant_full.sh \
+  --tenant-id new_tenant \
+  --tenant-name "New Tenant Inc" \
+  --num-sites 3
+
+# 2. Add connector in Snowsight UI (or update existing connector's stream mapping)
+```
+
+**Multi-tenant stream mapping:**
+```
+smdh-acme_corp-stream:SMDH_TENANT_ACME_CORP.RAW.SENSOR_READINGS,
+smdh-new_tenant-stream:SMDH_TENANT_NEW_TENANT.RAW.SENSOR_READINGS
+```
+
+### Monitoring Openflow Connectors
+
+```sql
+-- Connector status overview
+SELECT * FROM smdh_infrastructure.monitoring.v_openflow_connector_status;
+
+-- Health summary
+SELECT * FROM smdh_infrastructure.monitoring.v_openflow_health_summary;
+
+-- Grant access to new tenant (if not using automation script)
+CALL smdh_infrastructure.tenant_configs.sp_grant_openflow_tenant_access('tenant_id');
+```
+
+### Troubleshooting Openflow
+
+| Issue | Solution |
+|-------|----------|
+| **InterruptedException during init** | Change Consumer Type to `POLLING` (NOT Enhanced Fan-Out) |
+| **"Private Key not configured"** | Use `SNOWFLAKE_SESSION_TOKEN` authentication, not key-pair |
+| **"Insufficient privileges on schema"** | Run `CALL sp_grant_openflow_tenant_access('tenant_id')` |
+| **"Access Denied" from AWS** | Use IAM Access Keys (NOT role assumption); check DynamoDB permissions |
+| No data appearing | Check connector status in Snowsight UI; verify Kinesis stream has data |
+| Network timeout | Verify `OPENFLOW_AWS_EAI` integration is enabled |
+| High latency | Increase Kinesis shards; check warehouse size |
+| Connector stuck in "Stopping" | Right-click processor → Terminate to kill stuck thread |
+| **Routing task failing** | Check `INFORMATION_SCHEMA.TASK_HISTORY()` for error messages |
+
+See full troubleshooting guide: `docs/deployment/Openflow_Kinesis_Configuration_Guide.md`
+
+---
+
+## Full Tenant Onboarding (End-to-End)
+
+### Using the Automation Script
+
+```bash
+cd infrastructure/scripts
+
+# Full onboarding (AWS + Snowflake)
+./onboard_tenant_full.sh \
+  --tenant-id acme_corp \
+  --tenant-name "ACME Corporation" \
+  --num-sites 5 \
+  --contact-email ops@acme.com
+
+# Dry run (see what would happen)
+./onboard_tenant_full.sh \
+  --tenant-id acme_corp \
+  --tenant-name "ACME Corporation" \
+  --num-sites 5 \
+  --dry-run
+
+# Skip AWS (Snowflake only)
+./onboard_tenant_full.sh \
+  --tenant-id acme_corp \
+  --tenant-name "ACME Corporation" \
+  --num-sites 5 \
+  --skip-aws
+
+# Skip Snowflake (AWS only)
+./onboard_tenant_full.sh \
+  --tenant-id acme_corp \
+  --tenant-name "ACME Corporation" \
+  --num-sites 5 \
+  --skip-snowflake
+```
+
+### Validation
+
+```bash
+# Validate complete tenant setup
+./validate_tenant.sh --tenant-id acme_corp
+
+# Validate and send test message
+./validate_tenant.sh --tenant-id acme_corp --send-test-message
+```
+
+**Validation checks:**
+- ✅ Kinesis stream exists and is ACTIVE
+- ✅ IAM role exists with correct policies
+- ✅ IoT rule exists and is enabled
+- ✅ Snowflake database and schemas exist
+- ✅ Tenant registered in infrastructure DB
+- ✅ Openflow connector registered
+- ✅ Openflow role has correct grants
+
+---
 
   Snowflake Compatibility
 
@@ -348,19 +683,25 @@ Creates:
 - Roles: `smdh_tenant_operator`, `smdh_data_engineer`
 - Service account: `smdh_automation_svc`
 
- Step : Configure Kinesis Integration
-```bash
- Get AWS IAM role details first
-aws iam get-role --role-name smdh-snowflake-kinesis-role
+ Step : Configure Openflow Connector (Per-Tenant)
 
- Run Openflow connector setup
-snowsql -r ACCOUNTADMIN -f _openflow_connector.sql \
-  -D aws_iam_role_arn='arn:aws:iam:::role/smdh-snowflake-kinesis-role' \
-  -D aws_external_id='your-external-id' \
-  -D kinesis_stream_arn='arn:aws:kinesis:eu-west-::stream/smdh-sensor-data-stream'
+**IMPORTANT: Per-Tenant Stream Architecture**
+
+Each tenant requires their own Kinesis stream and Openflow connector because Openflow cannot filter records from a shared stream.
+
+```bash
+ 1. Run the SQL script to set up Openflow infrastructure (once)
+snowsql -r ACCOUNTADMIN -f sql/core/03_openflow_connector.sql
+
+ 2. Create Openflow Deployment and Runtime in Snowsight UI (once)
+ See: docs/deployment/Tenant_Onboarding_Guide.md
+
+ 3. For each tenant, add a Kinesis connector in Snowsight:
+    - Stream: smdh-{tenant_id}-stream
+    - Target: SMDH_TENANT_{TENANT_ID}.RAW.SENSOR_READINGS
 ```
 
-Important: After running this script, copy the `STORAGE_AWS_IAM_USER_ARN` and `STORAGE_AWS_EXTERNAL_ID` from the output and update your AWS IAM role trust policy.
+The IAM role uses a wildcard pattern (`smdh-*-stream`) to allow Snowflake to read from any tenant's stream.
 
 ---
 

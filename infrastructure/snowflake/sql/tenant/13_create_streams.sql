@@ -1,15 +1,20 @@
 -- ============================================================================
--- SMDH Tenant Streams Creation (Change Data Capture)
+-- SMDH Tenant Streams & Openflow Connection
 -- ============================================================================
--- Purpose: Create streams for real-time data processing pipeline
+-- Purpose: Create streams for CDC and connect tenant to Openflow for Kinesis ingestion
 -- Usage: snowsql -f tenant/13_create_streams.sql --variable tenant_id='company_a'
 -- Author: SMDH Platform Team
--- Version: 1.0
+-- Version: 1.1
 -- ============================================================================
--- This script creates Snowflake Streams for CDC (Change Data Capture):
--- - Streams on raw tables to detect new ingested data
--- - Streams enable tasks to process only new/changed data
--- - Supports incremental processing without full table scans
+-- This script:
+-- 1. Creates Snowflake Streams for CDC (Change Data Capture)
+-- 2. Grants Openflow access to tenant database for Kinesis ingestion
+-- 3. Registers the Openflow connector configuration
+-- ============================================================================
+-- Prerequisites:
+-- - Tenant database and tables created (10-12 scripts)
+-- - Core Openflow infrastructure set up (core/03_openflow_connector.sql)
+-- - AWS Kinesis stream created for this tenant (Terraform)
 -- ============================================================================
 
 -- Enable SnowSQL variable substitution
@@ -354,10 +359,60 @@ GRANT USAGE ON PROCEDURE analytics.sp_check_streams_health() TO ROLE IDENTIFIER(
 SELECT 'Granted stream permissions' AS result;
 
 -- ============================================================================
--- 14. Verification
+-- 14. Grant Openflow Access for Kinesis Ingestion
 -- ============================================================================
 
-SELECT '14. Verifying Stream Creation...' AS step;
+SELECT '14. Granting Openflow Access for Kinesis Ingestion...' AS step;
+
+-- Grant OPENFLOW_RUNTIME_ROLE_KINESIS access to this tenant's database
+-- This enables Snowflake Openflow to ingest data from the tenant's Kinesis stream
+CALL smdh_infrastructure.tenant_configs.sp_grant_openflow_tenant_access($tenant_id);
+
+SELECT 'Granted Openflow access to database: ' || $database_name AS result;
+
+-- ============================================================================
+-- 15. Register Openflow Connector Configuration
+-- ============================================================================
+
+SELECT '15. Registering Openflow Connector Configuration...' AS step;
+
+-- Register the connector in the tracking table (status = 'pending' until UI setup is complete)
+-- The connector is configured via Snowsight UI, this just tracks the configuration
+SET kinesis_stream_name = 'smdh-' || $tenant_id || '-stream';
+
+INSERT INTO smdh_infrastructure.tenant_configs.openflow_connectors (
+    tenant_id,
+    connector_name,
+    target_database,
+    target_schema,
+    target_table,
+    kinesis_stream_name,
+    aws_region,
+    status
+)
+SELECT
+    $tenant_id,
+    'kinesis-connector-' || $tenant_id,
+    UPPER($database_name),
+    'RAW',
+    'SENSOR_READINGS',
+    $kinesis_stream_name,
+    'eu-west-2',
+    'pending'
+WHERE NOT EXISTS (
+    SELECT 1 FROM smdh_infrastructure.tenant_configs.openflow_connectors
+    WHERE tenant_id = $tenant_id
+);
+
+SELECT 'Registered Openflow connector: kinesis-connector-' || $tenant_id AS result;
+SELECT 'Kinesis stream: ' || $kinesis_stream_name AS info;
+SELECT 'Status: pending (complete setup in Snowsight UI)' AS info;
+
+-- ============================================================================
+-- 16. Verification
+-- ============================================================================
+
+SELECT '16. Verifying Stream Creation...' AS step;
 
 -- Show all streams
 USE DATABASE IDENTIFIER($database_name);
@@ -369,12 +424,18 @@ SELECT * FROM analytics.v_stream_status;
 -- Check stream health
 CALL analytics.sp_check_streams_health();
 
+-- Verify Openflow connector registration
+SELECT 'Openflow Connector Status:' AS verification;
+SELECT tenant_id, connector_name, kinesis_stream_name, status
+FROM smdh_infrastructure.tenant_configs.openflow_connectors
+WHERE tenant_id = $tenant_id;
+
 -- ============================================================================
--- 15. Summary
+-- 17. Summary
 -- ============================================================================
 
 SELECT '╔════════════════════════════════════════════════════════════════╗' AS summary
-UNION ALL SELECT '║  Tenant Streams Creation Complete                          ║'
+UNION ALL SELECT '║  Tenant Streams & Openflow Connection Complete             ║'
 UNION ALL SELECT '╚════════════════════════════════════════════════════════════╝'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Created Streams:'
@@ -389,29 +450,22 @@ UNION ALL SELECT 'NORMALIZED Schema:'
 UNION ALL SELECT '  [OK] sensor_metrics_stream (append-only)'
 UNION ALL SELECT '  [OK] device_events_stream (append-only)'
 UNION ALL SELECT ''
+UNION ALL SELECT 'Openflow Configuration:'
+UNION ALL SELECT '  [OK] Granted OPENFLOW_RUNTIME_ROLE_KINESIS access to tenant DB'
+UNION ALL SELECT '  [OK] Registered Openflow connector (status: pending)'
+UNION ALL SELECT ''
 UNION ALL SELECT 'Monitoring Objects:'
 UNION ALL SELECT '  [OK] v_stream_status (view)'
 UNION ALL SELECT '  [OK] v_stream_lag (view)'
-UNION ALL SELECT '  [OK] fn_stream_has_data (function)'
-UNION ALL SELECT '  [OK] sp_reset_stream (procedure)'
 UNION ALL SELECT '  [OK] sp_check_streams_health (procedure)'
 UNION ALL SELECT ''
-UNION ALL SELECT 'Stream Benefits:'
-UNION ALL SELECT '  • Incremental processing (only new/changed data)'
-UNION ALL SELECT '  • Automatic change detection'
-UNION ALL SELECT '  • Low overhead (no full table scans)'
-UNION ALL SELECT '  • Enables real-time data pipeline'
-UNION ALL SELECT '  • Built-in offset management'
-UNION ALL SELECT ''
 UNION ALL SELECT 'Next Steps:'
-UNION ALL SELECT '  1. Run 14_create_tasks.sql to create processing tasks'
-UNION ALL SELECT '  2. Tasks will consume from these streams automatically'
+UNION ALL SELECT '  1. Complete Openflow connector setup in Snowsight UI'
+UNION ALL SELECT '  2. Run 14_create_routing_task.sql to create data routing task'
 UNION ALL SELECT '  3. Monitor stream lag: SELECT * FROM analytics.v_stream_lag;'
-UNION ALL SELECT '  4. Check stream health: CALL analytics.sp_check_streams_health();'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Monitoring Queries:'
-UNION ALL SELECT '  • Stream status: SELECT * FROM analytics.v_stream_status;'
 UNION ALL SELECT '  • Stream lag: SELECT * FROM analytics.v_stream_lag;'
 UNION ALL SELECT '  • Health check: CALL analytics.sp_check_streams_health();'
-UNION ALL SELECT '  • Reset stream: CALL analytics.sp_reset_stream(''raw'', ''sensor_readings_stream'');'
+UNION ALL SELECT '  • Openflow status: SELECT * FROM smdh_infrastructure.monitoring.v_openflow_connector_status;'
 UNION ALL SELECT '============================================================';

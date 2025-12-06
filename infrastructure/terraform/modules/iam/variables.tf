@@ -11,6 +11,12 @@ variable "environment" {
   type        = string
 }
 
+variable "aws_region" {
+  description = "AWS region for DynamoDB ARN construction"
+  type        = string
+  default     = "eu-west-2"
+}
+
 variable "snowflake_account_id" {
   description = "Snowflake AWS account ID for cross-account trust"
   type        = string

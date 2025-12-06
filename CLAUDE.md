@@ -176,3 +176,116 @@ cd infrastructure/terraform
 terraform plan -var-file=environments/dev/terraform.tfvars
 terraform apply -var-file=environments/dev/terraform.tfvars
 ```
+
+## IoT Pipeline E2E Testing
+
+### Test Scripts
+
+Located in `infrastructure/scripts/`:
+
+| Script | Purpose |
+|--------|---------|
+| `test_iot_pipeline.sh` | Send UG65-formatted test messages through IoT pipeline |
+| `check_iot_pipeline.sh` | Health check for all pipeline components |
+
+### Run E2E Test
+
+```bash
+# Basic test (5 messages to test_tenant/SITE_001)
+./infrastructure/scripts/test_iot_pipeline.sh
+
+# Custom test
+./infrastructure/scripts/test_iot_pipeline.sh tenant_id site_id count
+./infrastructure/scripts/test_iot_pipeline.sh test_tenant SITE_001 10
+
+# Using Python MQTT simulator directly (requires certificates)
+python tests/device-simulators/ug65_e2e_test.py \
+    --tenant-id test_tenant \
+    --site-id SITE_001 \
+    --count 5
+```
+
+### Check Pipeline Health
+
+```bash
+./infrastructure/scripts/check_iot_pipeline.sh test_tenant
+```
+
+Checks:
+- Kinesis stream status
+- IoT rule configuration
+- Active certificates
+- Recent ingestion metrics
+- Live pipeline test
+
+### UG65 Message Format
+
+Messages must follow the Milesight UG65 LoRaWAN gateway format (see `docs/sensor-docs/Zoho WorkDrive/ug65_mqtt_integration.md`):
+
+```json
+{
+  "applicationId": "smdh",
+  "deviceEUI": "24E124707E043923",
+  "deviceName": "AM308-TempHumidity-Floor1",
+  "time": "2025-12-04T16:12:00.000Z",
+  "fPort": 85,
+  "fCntUp": 1001,
+  "adr": true,
+  "confirmedUplink": false,
+  "data": {
+    "temperature": 21.8,
+    "humidity": 48.5,
+    "co2": 420,
+    "battery": 92
+  },
+  "rx": {
+    "gatewayEUI": "24E124FFFEF35F39",
+    "frequency": 868.1,
+    "dataRate": "SF9BW125",
+    "rssi": -102,
+    "snr": -3.2
+  }
+}
+```
+
+### MQTT Topic Pattern
+
+IoT rule expects: `smdh/{tenant_id}/{site_id}/sensor-data`
+
+The IoT rule enriches messages with:
+- `tenant_id` - extracted from topic(2)
+- `site_id` - extracted from topic(3)
+- `iot_timestamp` - server timestamp
+- `device_id` - client ID
+
+### IoT Certificate Management
+
+Certificates are stored in `infrastructure/deployment/certificates/`:
+- `{tenant_id}_{site_id}_certificate.pem` - Device certificate
+- `{tenant_id}_{site_id}_private_key.pem` - Private key
+- `ca/AmazonRootCA1.pem` - AWS root CA
+
+To create a new certificate:
+```bash
+aws iot create-keys-and-certificate \
+    --set-as-active \
+    --certificate-pem-outfile cert.pem \
+    --private-key-outfile key.pem \
+    --region eu-west-2
+
+# Attach policy
+aws iot attach-policy \
+    --policy-name "smdh-policy-{tenant_id}" \
+    --target "arn:aws:iot:...:cert/{cert_id}" \
+    --region eu-west-2
+```
+
+### Verify Data in Snowflake
+
+After running tests, verify data arrived:
+```sql
+USE DATABASE SMDH_TENANT_TEST_TENANT;
+SELECT * FROM raw.sensor_readings
+WHERE ingestion_timestamp >= DATEADD(MINUTE, -10, CURRENT_TIMESTAMP())
+ORDER BY ingestion_timestamp DESC;
+```
