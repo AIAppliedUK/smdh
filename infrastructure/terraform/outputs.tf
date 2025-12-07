@@ -26,9 +26,9 @@ output "tenant_kinesis_streams" {
   }
 }
 
-output "snowflake_iam_role_arn" {
-  description = "IAM role ARN for Snowflake to assume (for Openflow connector)"
-  value       = module.iam.snowflake_role_arn
+output "openflow_iam_user_arn" {
+  description = "IAM user ARN for OpenFlow Kinesis connector"
+  value       = module.iam.openflow_user_arn
   sensitive   = true
 }
 
@@ -122,13 +122,14 @@ output "site_device_mapping" {
 # ============================================================================
 
 output "openflow_aws_credentials_config" {
-  description = "Configuration for Openflow AWSCredentialsProviderControllerService (role assumption)"
+  description = "Access keys for OpenFlow Kinesis connector (OpenFlow requires IAM access keys, not role assumption)"
   value = {
-    assume_role_arn         = module.iam.snowflake_role_arn
-    assume_role_external_id = var.snowflake_external_id
-    assume_role_sts_region  = var.aws_region
-    use_default_credentials = false
-    instructions            = "Configure these values in the AWSCredentialsProviderControllerService in Openflow"
+    access_key_id     = module.iam.openflow_access_key_id
+    secret_access_key = module.iam.openflow_secret_access_key
+    aws_region        = var.aws_region
+    user_name         = module.iam.openflow_user_name
+    user_arn          = module.iam.openflow_user_arn
+    instructions      = "Use these credentials in Snowsight OpenFlow connector configuration"
   }
   sensitive = true
 }

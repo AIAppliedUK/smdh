@@ -47,9 +47,11 @@ This guide provides step-by-step instructions for deploying the Smart Manufactur
 |-----------|---------|----------|
 | **AWS IoT Core** | MQTT broker for device connectivity | AWS eu-west-2 |
 | **Kinesis Data Streams** | Real-time data buffering (per-tenant) | AWS eu-west-2 |
-| **IAM Roles** | Cross-account access for Snowflake | AWS IAM |
+| **IAM User** | Access keys for Snowflake OpenFlow | AWS IAM |
+| **DynamoDB Tables** | KCL checkpoint storage (auto-created) | AWS DynamoDB |
 | **Snowflake Infrastructure DB** | Platform metadata and tenant registry | Snowflake |
 | **Snowflake Openflow** | Native Kinesis ingestion | Snowflake |
+| **External Access Integration** | Network egress for AWS connectivity | Snowflake |
 | **Tenant Databases** | Isolated data storage per tenant | Snowflake |
 
 ---
@@ -586,6 +588,18 @@ Openflow Deployments and Runtimes cannot be created via SQL; they must be config
 3. Click **Create**
 4. Wait 5-10 minutes for the runtime to reach **Active** status
 
+> **Important: Runtime Initialization Timing**
+>
+> After the runtime shows **Active** status, it still needs additional time (2-3 minutes) to fully initialize internally. During this time, the runtime container must:
+> - Connect to Snowflake and establish session tokens
+> - Initialize the KCL (Kinesis Consumer Library) lease coordination
+> - Register with DynamoDB for checkpointing
+> - Establish Kinesis shard iterators
+>
+> **If using `LATEST` stream position:** Any data sent to Kinesis before the runtime completes initialization will be skipped. Wait until you see logs like `"This node has been elected Primary Node"` and `"Node connected"` in the runtime before sending test data.
+>
+> **Recommendation:** After creating or restarting a runtime, wait 2-3 minutes after it shows Active before sending test data to ensure reliable data flow.
+
 ### 4.3 Critical OpenFlow Configuration Notes
 
 Before configuring any Kinesis connector, be aware of these critical requirements discovered during implementation:
@@ -597,6 +611,39 @@ Before configuring any Kinesis connector, be aware of these critical requirement
 | **SF Auth Strategy** | `SNOWFLAKE_SESSION_TOKEN` | `KEY_PAIR` | `Private Key not configured` |
 | **Metrics Publishing** | `DISABLED` | `None` | Validation error |
 | **StandardPrivateKeyService** | Disabled/deleted | Enabled | `Private Key not configured` |
+| **External Access Integration** | Attached to Runtime | Not attached | `UnknownHostException: dynamodb.*.amazonaws.com` |
+| **Initial Stream Position** | `LATEST` or `TRIM_HORIZON` | N/A | `LATEST` = new data only; `TRIM_HORIZON` = all historical data |
+
+#### External Access Integration (EAI) Requirement
+
+The External Access Integration (`OPENFLOW_AWS_EAI`) **must be attached to the Runtime** for network connectivity. This is required for:
+- Kinesis stream access
+- DynamoDB checkpoint table operations
+- CloudWatch metrics (if enabled)
+
+Without EAI, you will see errors like:
+```
+UnknownHostException: dynamodb.eu-west-2.amazonaws.com
+```
+
+**Note:** EAI is for network egress (allowing Snowflake to reach AWS endpoints), NOT for authentication. Authentication uses IAM Access Keys.
+
+#### Initial Stream Position Behaviour
+
+The `Kinesis Initial Stream Position` setting determines where the connector starts reading:
+
+| Setting | Behaviour | Use Case |
+|---------|-----------|----------|
+| `LATEST` | Read only new records arriving after connector starts | Normal operation, fresh deployments |
+| `TRIM_HORIZON` | Read all available records from the beginning | Backfill, recovery scenarios |
+
+**Important:** If you restart the connector and data was sent while it was stopped, that data will NOT be processed if using `LATEST`. The connector's checkpoint (stored in DynamoDB) will be at `LATEST`, skipping any backlog.
+
+To process historical data:
+1. Stop the connector
+2. Delete the DynamoDB checkpoint table (e.g., `smdh-openflow-{tenant_id}`)
+3. Change `Kinesis Initial Stream Position` to `TRIM_HORIZON`
+4. Restart the connector
 
 ### 4.4 Create IAM User for OpenFlow (Access Keys Required)
 
@@ -617,44 +664,69 @@ cat > /tmp/openflow-kinesis-policy.json << EOF
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "KinesisAccess",
+      "Sid": "KinesisReadAccess",
       "Effect": "Allow",
       "Action": [
         "kinesis:DescribeStream",
         "kinesis:DescribeStreamSummary",
-        "kinesis:GetShardIterator",
         "kinesis:GetRecords",
-        "kinesis:ListShards"
+        "kinesis:GetShardIterator",
+        "kinesis:ListShards",
+        "kinesis:ListStreams",
+        "kinesis:SubscribeToShard",
+        "kinesis:RegisterStreamConsumer",
+        "kinesis:DeregisterStreamConsumer",
+        "kinesis:DescribeStreamConsumer",
+        "kinesis:ListStreamConsumers"
       ],
       "Resource": "arn:aws:kinesis:eu-west-2:${AWS_ACCOUNT_ID}:stream/smdh-*"
     },
     {
-      "Sid": "DynamoDBCheckpointing",
+      "Sid": "KinesisListAccess",
+      "Effect": "Allow",
+      "Action": [
+        "kinesis:ListStreams",
+        "kinesis:ListTagsForStream"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DynamoDBKCLAccess",
       "Effect": "Allow",
       "Action": [
         "dynamodb:CreateTable",
         "dynamodb:UpdateTable",
+        "dynamodb:DeleteTable",
         "dynamodb:DescribeTable",
+        "dynamodb:DescribeTimeToLive",
+        "dynamodb:UpdateTimeToLive",
         "dynamodb:GetItem",
         "dynamodb:PutItem",
         "dynamodb:UpdateItem",
         "dynamodb:DeleteItem",
         "dynamodb:Scan",
-        "dynamodb:Query"
+        "dynamodb:Query",
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem"
       ],
-      "Resource": "arn:aws:dynamodb:eu-west-2:${AWS_ACCOUNT_ID}:table/smdh-*"
+      "Resource": "arn:aws:dynamodb:eu-west-2:${AWS_ACCOUNT_ID}:table/smdh-openflow-*"
     },
     {
-      "Sid": "DynamoDBListTables",
+      "Sid": "DynamoDBKCLListAccess",
       "Effect": "Allow",
       "Action": ["dynamodb:ListTables"],
       "Resource": "*"
     },
     {
-      "Sid": "CloudWatchMetrics",
+      "Sid": "CloudWatchMetricsAccess",
       "Effect": "Allow",
       "Action": ["cloudwatch:PutMetricData"],
-      "Resource": "*"
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "cloudwatch:namespace": "SMDH/Openflow"
+        }
+      }
     }
   ]
 }
@@ -672,7 +744,21 @@ aws iam create-access-key --user-name smdh-openflow-kinesis-user
 
 **Store the Access Key ID and Secret Access Key securely** (e.g., AWS Secrets Manager, 1Password). You will need these when configuring the Kinesis connector.
 
-> **Note:** The `dynamodb:UpdateTable` permission is required for KCL lease management. Missing this causes connector failures.
+> **Note:** If using Terraform, the IAM user is created automatically by the IAM module (`terraform/modules/iam/main.tf`). Retrieve credentials from Terraform outputs or AWS Secrets Manager.
+
+#### Required IAM Permissions Explained
+
+| Permission | Purpose |
+|------------|---------|
+| `kinesis:GetRecords`, `GetShardIterator` | Read data from the stream |
+| `kinesis:DescribeStream*`, `ListShards` | Discover stream structure |
+| `kinesis:*StreamConsumer` | For enhanced fan-out (if used) |
+| `dynamodb:CreateTable`, `UpdateTable` | Create/modify KCL checkpoint tables |
+| `dynamodb:*Item`, `Scan`, `Query` | Read/write checkpoint data |
+| `dynamodb:*TimeToLive` | Manage checkpoint TTL settings |
+| `cloudwatch:PutMetricData` | Optional: publish connector metrics |
+
+> **Critical:** The `dynamodb:UpdateTable` and `dynamodb:UpdateTimeToLive` permissions are required for KCL lease management. Missing these causes connector failures with errors like `not authorized to perform: dynamodb:UpdateTable`.
 
 ---
 
@@ -831,6 +917,60 @@ snowsql -q "ALTER WAREHOUSE SMDH_WH RESUME;"
 1. Check runtime logs in Snowsight
 2. Verify role has correct grants
 3. Ensure warehouse is available
+
+**Issue: Connector running but no data flowing (0 bytes In/Out)**
+
+This is typically caused by runtime initialization timing. Symptoms:
+- Processors show green "running" state with task counts incrementing
+- In/Out counters remain at 0 bytes
+- No errors visible in bulletins
+- AWS CloudWatch shows no `GetRecords` activity
+
+**Root Cause:** The runtime needs time to fully initialize after creation or restart. With `LATEST` stream position, data sent before initialization completes is missed.
+
+**Solution:**
+
+1. Check runtime logs for initialization messages:
+   - Look for: `"This node has been elected Primary Node"`
+   - Look for: `"Received first heartbeat from connecting node. Node connected."`
+
+2. If no such messages appear, restart the runtime:
+   - Stop all connectors in the runtime
+   - Stop the runtime
+   - Wait 30 seconds
+   - Start the runtime
+   - Wait 2-3 minutes for full initialization
+   - Start the connectors
+   - Send test data AFTER initialization completes
+
+3. To verify AWS connectivity, check if GetRecords calls are being made:
+   ```bash
+   aws cloudwatch get-metric-statistics \
+     --namespace AWS/Kinesis \
+     --metric-name GetRecords.Records \
+     --dimensions Name=StreamName,Value=smdh-{tenant_id}-stream \
+     --start-time $(date -u -v-10M +%Y-%m-%dT%H:%M:%SZ) \
+     --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
+     --period 60 --statistics Sum --region eu-west-2
+   ```
+
+4. If `GetRecords` shows no datapoints, the connector is not connecting to Kinesis at all - check IAM credentials and EAI configuration.
+
+**Issue: Data was sent but not appearing in Snowflake**
+
+If using `LATEST` stream position, data sent before the connector was fully initialized is skipped. Options:
+
+1. **Send new data** while the connector is running - it will be processed immediately
+2. **Backfill historical data:**
+   - Stop the connector
+   - Delete DynamoDB checkpoint tables:
+     ```bash
+     aws dynamodb delete-table --table-name smdh-openflow-{tenant_id} --region eu-west-2
+     aws dynamodb delete-table --table-name smdh-openflow-{tenant_id}-CoordinatorState --region eu-west-2
+     aws dynamodb delete-table --table-name smdh-openflow-{tenant_id}-WorkerMetricStats --region eu-west-2
+     ```
+   - Change `Kinesis Initial Stream Position` to `TRIM_HORIZON` in the connector config
+   - Restart the connector - it will process all available data from the beginning of the stream
 
 ---
 
@@ -1077,6 +1217,6 @@ tenants = {
 
 ---
 
-*Document Version: 1.4*
-*Last Updated: 6 December 2025*
+*Document Version: 1.6*
+*Last Updated: 7 December 2025*
 *Author: SMDH Platform Team*

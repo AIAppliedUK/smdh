@@ -52,32 +52,42 @@ The SMDH platform is deployed using Terraform Infrastructure as Code. This appro
 
 Deployment Summary
 
-Successfully Deployed: November : UTC
-Environment: Development (eu-west-)
-Resources Created: AWS resources
-Tenant: test_tenant ( sites, gateways)
+Successfully Deployed: December 2025
+Environment: Development (eu-west-2)
+Resources Created: AWS resources per tenant
+Tenant: manufacturing_demo (5 sites)
 
 Quick Start
 
+The Terraform configuration uses **three separate variable files** for better organisation:
+
+| File | Purpose | When to Modify |
+|------|---------|----------------|
+| `01_tags.tfvars` | Resource tags (owner, cost centre) | Rarely |
+| `02_core.tfvars` | AWS region, retention, Snowflake integration | Rarely |
+| `03_tenants.tfvars` | Tenant definitions | **Each tenant onboarding** |
+
 ```bash
- Navigate to Terraform directory
+# Navigate to Terraform directory
 cd infrastructure/terraform
 
- Review the comprehensive README
+# Review the comprehensive README
 cat README.md
 
- Copy and configure your environment
-cp environments/dev/terraform.tfvars.example environments/dev/terraform.tfvars
- Edit terraform.tfvars with your values
-
- Initialize Terraform (one-time setup)
+# Initialize Terraform (one-time setup)
 terraform init
 
- Review the deployment plan
-terraform plan -var-file="environments/dev/terraform.tfvars"
+# Review the deployment plan (all three tfvars files required)
+terraform plan \
+  -var-file=environments/dev/01_tags.tfvars \
+  -var-file=environments/dev/02_core.tfvars \
+  -var-file=environments/dev/03_tenants.tfvars
 
- Deploy infrastructure
-terraform apply -var-file="environments/dev/terraform.tfvars"
+# Deploy infrastructure
+terraform apply \
+  -var-file=environments/dev/01_tags.tfvars \
+  -var-file=environments/dev/02_core.tfvars \
+  -var-file=environments/dev/03_tenants.tfvars
 ```
 
 What Gets Deployed
@@ -130,15 +140,16 @@ Log Group: /aws/iot/smdh (-day retention)
 SNS Topic: smdh-platform-alarms-dev
 ```
 
-Test Tenant Configuration
+Demo Tenant Configuration
 
 ```
-Tenant ID: test_tenant
-Sites:  (site_, site_)
-Gateways:  (one per site)
-IoT Policy: smdh-policy-test_tenant
-IoT Rule: smdh_route_test_tenant
-Certificates:  X. certificates with private keys
+Tenant ID: manufacturing_demo
+Tenant Name: Demo Manufacturing Corp
+Sites: 5
+Kinesis Stream: smdh-manufacturing_demo-stream
+IoT Policy: smdh-policy-manufacturing_demo
+IoT Rule: smdh_route_manufacturing_demo
+Certificates: X.509 certificates per site with private keys
 ```
 
 Terraform Outputs
@@ -178,9 +189,9 @@ terraform output -json tenant_configurations | jq .
 
 . Configure Snowflake Integration
 
-- Update `snowflake_account_id` in terraform.tfvars
-- Update `snowflake_external_id` (generate UUID)
-- Re-run `terraform apply` to update IAM role trust policy
+- Update `snowflake_account_id` in `02_core.tfvars`
+- Update `snowflake_external_id` in `02_core.tfvars` (generate UUID)
+- Re-run terraform apply with all three tfvars files to update IAM role trust policy
 
 . Test MQTT Connectivity
 
@@ -572,20 +583,32 @@ The Snowflake implementation is organised as follows:
 
 ```
 infrastructure/snowflake/
- validate_setup.sh                     Master validation script
- _drop_all.sql                      Clean slate script (use with caution)
- _infrastructure_setup.sql          Core infrastructure database
- _shared_resources.sql              Warehouses and shared roles
- _openflow_connector.sql            Kinesis connector configuration
- tenant/
-     _create_tenant_database.sql    Tenant database and schemas
-     _create_schemas.sql             Additional schema setup
-     _create_tables.sql              Core data tables
-     _create_streams.sql             Change data capture streams
-     _create_tasks.sql               Processing tasks
-     _create_dynamic_tables.sql     Aggregation tables
-     _create_roles.sql               Tenant-specific roles
-     _create_monitoring.sql          Monitoring views and alerts
+├── scripts/
+│   ├── validate_setup.sh              # Master validation script
+│   ├── onboard_tenant.sh              # Tenant onboarding automation
+│   ├── setup_openflow.sh              # Openflow setup automation
+│   └── snowflake.sh                   # General Snowflake utilities
+├── sql/
+│   ├── core/
+│   │   ├── 00_drop_all.sql            # Clean slate (use with caution)
+│   │   ├── 01_infrastructure_setup.sql # Infrastructure database
+│   │   ├── 02_shared_resources.sql    # Warehouses, roles
+│   │   └── 03_openflow_connector.sql  # Kinesis connector config
+│   ├── tenant/
+│   │   ├── 10_create_tenant_database.sql
+│   │   ├── 11_create_schemas.sql
+│   │   ├── 12_create_tables.sql
+│   │   ├── 13_create_streams.sql
+│   │   ├── 14_create_routing_task.sql # Routes data from landing table
+│   │   ├── 14_create_tasks.sql        # Processing tasks
+│   │   ├── 15_create_dynamic_tables.sql
+│   │   ├── 16_create_roles.sql
+│   │   └── 17_create_monitoring.sql
+│   └── utility/
+│       ├── check_current_state.sql
+│       ├── check_role.sql
+│       └── validate_tenant.sql
+└── README.md
 ```
 
 . Snowflake Validation Script
@@ -705,7 +728,7 @@ USE WAREHOUSE SMDH_WH;
 
 **Post-SQL UI Configuration** (required in Snowsight):
 
-1. Navigate to **Data** > **Openflow**
+1. Navigate to **Ingestion** > **Openflow**
 2. Create Deployment: `smdh-openflow-deployment`
 3. Create Runtime: `smdh-kinesis-runtime`
    - Role: `OPENFLOW_RUNTIME_ROLE_KINESIS`
@@ -713,13 +736,22 @@ USE WAREHOUSE SMDH_WH;
    - External Access: `OPENFLOW_AWS_EAI`
 4. Add Kinesis Connector with stream-to-table mapping
 
+**CRITICAL Configuration Requirements:**
+
+| Setting | Correct Value | Wrong Value (will fail) |
+|---------|---------------|-------------------------|
+| AWS Authentication | IAM Access Keys | Role Assumption |
+| Consumer Type | `Shared Throughput` | Enhanced Fan-Out |
+| Snowflake Auth | `SNOWFLAKE_SESSION_TOKEN` | KEY_PAIR |
+
 **Stream-to-Table Mapping Example**:
+
+OpenFlow automatically creates a landing table named after the Kinesis stream (uppercase, hyphens preserved):
 ```
-smdh-abc_manufacturing-stream:SMDH_TENANT_ABC_MANUFACTURING.RAW.sensor_readings,
-smdh-xyz_corp-stream:SMDH_TENANT_XYZ_CORP.RAW.sensor_readings
+smdh-manufacturing_demo-stream → "SMDH-MANUFACTURING_DEMO-STREAM" table
 ```
 
-**Detailed Instructions**: See `docs/deployment/Tenant_Onboarding_Guide.md`
+**Detailed Instructions**: See `infrastructure/deployment/Tenant_Onboarding_Guide.md`
 
 ---
 
@@ -2183,8 +2215,8 @@ Solution:
 . **DO NOT USE** `infrastructure/snowflake/scripts/setup_kinesis_integration.sh` - it is deprecated
 . **USE INSTEAD**: Snowflake Openflow Connector approach:
    - Run `infrastructure/snowflake/sql/core/03_openflow_connector.sql` in Snowsight
-   - Complete UI configuration in Snowsight (Data > Openflow)
-   - Follow `docs/deployment/Tenant_Onboarding_Guide.md`
+   - Complete UI configuration in Snowsight (Ingestion > Openflow)
+   - Follow `infrastructure/deployment/Tenant_Onboarding_Guide.md`
 
 The correct architecture uses:
 - Per-tenant Kinesis streams (not a shared stream)
@@ -2206,9 +2238,20 @@ Solution:
 
 Document History
 
-| Date | Version | Changes                                                                                                                                        | Author        |
-| ---- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| 2024-12-02 | 2.0     | Added Snowflake Openflow Connector for native Kinesis integration, documented per-tenant stream architecture decision, updated tenant onboarding with Openflow configuration | Platform Team |
-| --   | 1.3     | Updated Snowflake configuration with validated scripts, added variable reference documentation, included troubleshooting for common SQL issues | Platform Team |
-| --   | 1.2     | Added Terraform deployment section with actual deployment results                                                                              | Platform Team |
-| --   | 1.1     | Initial release with manual CLI procedures                                                                                                     | Platform Team |
+| Date | Version | Changes | Author |
+| ---- | ------- | ------- | ------ |
+| 2025-12-06 | 2.1 | Updated Terraform to use three-file tfvars structure, corrected Openflow navigation path, added critical configuration requirements table, updated directory structure | Platform Team |
+| 2024-12-02 | 2.0 | Added Snowflake Openflow Connector for native Kinesis integration, documented per-tenant stream architecture decision, updated tenant onboarding with Openflow configuration | Platform Team |
+| 2024-11-20 | 1.3 | Updated Snowflake configuration with validated scripts, added variable reference documentation, included troubleshooting for common SQL issues | Platform Team |
+| 2024-11-15 | 1.2 | Added Terraform deployment section with actual deployment results | Platform Team |
+| 2024-11-01 | 1.1 | Initial release with manual CLI procedures | Platform Team |
+
+---
+
+**Related Documentation:**
+
+| Document | Purpose | Location |
+|----------|---------|----------|
+| Core Infrastructure Deployment Guide | Step-by-step deployment | `infrastructure/deployment/Core_Infrastructure_Deployment_Guide.md` |
+| Tenant Onboarding Guide | Per-tenant setup | `infrastructure/deployment/Tenant_Onboarding_Guide.md` |
+| CLAUDE.md | Development guidelines | `CLAUDE.md` |

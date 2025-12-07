@@ -220,8 +220,14 @@ After the automated script completes, you must add the Kinesis connector in the 
 | **Consumer Type** | `Shared Throughput` | **CRITICAL: NOT Enhanced Fan-Out** |
 | Kinesis Application Name | `smdh-openflow-acme_corp` | Used for DynamoDB checkpoint table name |
 | Kinesis Stream Name | `smdh-acme_corp-stream` | Must match exactly |
-| Kinesis Initial Stream Position | `LATEST` | Or `TRIM_HORIZON` for all historical data |
+| Kinesis Initial Stream Position | `LATEST` | See note below |
 | Metrics Publishing | `DISABLED` | Options: DISABLED, LOGS, CLOUDWATCH |
+
+> **Initial Stream Position:**
+> - `LATEST` (default): Only reads new records arriving after connector starts. Recommended for normal operation.
+> - `TRIM_HORIZON`: Reads all available records from the beginning. Use for backfill or recovery.
+>
+> **Important:** If data was sent to Kinesis before the connector started, it will NOT be processed with `LATEST`. To process historical data, delete the DynamoDB checkpoint table and set to `TRIM_HORIZON`.
 
 **Streaming Destination Parameters:**
 
@@ -693,6 +699,35 @@ FROM smdh_infrastructure.monitoring.v_openflow_health_summary;
 | No landing table created | Connector not started | Start connector, wait 60 seconds |
 | Routing task shows 0 rows | Stream consumed multiple times | Check procedure uses temp table pattern |
 | DynamoDB errors | Missing `UpdateTable` permission | Add to IAM policy |
+| `UnknownHostException: dynamodb.*.amazonaws.com` | EAI not attached to runtime | Attach `OPENFLOW_AWS_EAI` to runtime |
+| Connector running but no data | Initial Stream Position = LATEST | Data sent before connector started is skipped |
+| 0 bytes read despite data in stream | Checkpoint at LATEST | Delete DynamoDB checkpoint table and restart |
+
+### Check DynamoDB Checkpoint Tables
+
+OpenFlow creates DynamoDB tables for KCL checkpointing. You can verify checkpoint status:
+
+```bash
+# List checkpoint tables
+aws dynamodb list-tables --region eu-west-2 --query 'TableNames[?contains(@, `smdh-openflow`)]'
+
+# Check checkpoint status for a tenant
+aws dynamodb scan --table-name smdh-openflow-acme_corp --region eu-west-2 \
+  --projection-expression "leaseKey,checkpoint,leaseCounter"
+```
+
+**Checkpoint Values:**
+- `checkpoint: "LATEST"` - Connector will only read new records
+- `checkpoint: "TRIM_HORIZON"` - Connector will read from beginning
+- `checkpoint: "<sequence_number>"` - Connector is processing records
+
+**To reset checkpoints (process all data):**
+```bash
+# Delete the checkpoint table (connector must be stopped)
+aws dynamodb delete-table --table-name smdh-openflow-acme_corp --region eu-west-2
+
+# Then restart connector with Initial Stream Position = TRIM_HORIZON
+```
 
 ### Check Kinesis Stream Activity
 
@@ -783,16 +818,18 @@ curl -o infrastructure/deployment/certificates/ca/AmazonRootCA1.pem \
 | 2 | Run `onboard_tenant_full.sh` script | ☐ |
 | 3 | Verify AWS resources created (Kinesis, IoT rule) | ☐ |
 | 4 | Verify Snowflake database created | ☐ |
-| 5 | Add Kinesis connector in Snowsight UI | ☐ |
-| 6 | Set Consumer Type = `Shared Throughput` (NOT Enhanced Fan-Out) | ☐ |
-| 7 | Set Auth Strategy = `SNOWFLAKE_SESSION_TOKEN` | ☐ |
-| 8 | Disable `StandardPrivateKeyService` controller service | ☐ |
-| 9 | Start the connector | ☐ |
-| 10 | Verify landing table created (wait 60s) | ☐ |
-| 11 | Deploy routing task (`14_create_routing_task.sql`) | ☐ |
-| 12 | Resume routing task | ☐ |
-| 13 | Send test message | ☐ |
-| 14 | Verify data appears in typed tables | ☐ |
+| 5 | Verify Runtime has EAI attached (`OPENFLOW_AWS_EAI`) | ☐ |
+| 6 | Add Kinesis connector in Snowsight UI | ☐ |
+| 7 | Set Consumer Type = `Shared Throughput` (NOT Enhanced Fan-Out) | ☐ |
+| 8 | Set Auth Strategy = `SNOWFLAKE_SESSION_TOKEN` | ☐ |
+| 9 | Disable `StandardPrivateKeyService` controller service | ☐ |
+| 10 | Start the connector | ☐ |
+| 11 | Verify DynamoDB checkpoint table created | ☐ |
+| 12 | Verify landing table created (wait 60s) | ☐ |
+| 13 | Deploy routing task (`14_create_routing_task.sql`) | ☐ |
+| 14 | Resume routing task | ☐ |
+| 15 | Send test message (AFTER connector started) | ☐ |
+| 16 | Verify data appears in typed tables | ☐ |
 
 ### Critical Configuration Parameters
 
@@ -802,6 +839,8 @@ curl -o infrastructure/deployment/certificates/ca/AmazonRootCA1.pem \
 | Consumer Type | `Shared Throughput` | Enhanced Fan-Out |
 | SF Auth Strategy | `SNOWFLAKE_SESSION_TOKEN` | `KEY_PAIR` |
 | Schema Permissions | `USAGE` + `CREATE TABLE` | `USAGE` only |
+| Runtime EAI | `OPENFLOW_AWS_EAI` attached | Not attached |
+| IAM DynamoDB Perms | Include `UpdateTable`, `UpdateTimeToLive` | Missing these perms |
 
 ---
 
@@ -863,6 +902,6 @@ WHERE ingestion_timestamp >= DATEADD(HOUR, -1, CURRENT_TIMESTAMP());
 
 ---
 
-*Document Version: 2.2*
-*Last Updated: 6 December 2025*
+*Document Version: 2.3*
+*Last Updated: 7 December 2025*
 *Author: SMDH Platform Team*

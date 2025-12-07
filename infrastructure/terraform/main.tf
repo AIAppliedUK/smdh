@@ -35,27 +35,25 @@ module "iot_core" {
 # Each tenant gets their own stream: smdh-{tenant_id}-stream
 # This is required for Snowflake Openflow data isolation
 
-# IAM - Roles for Snowflake/Openflow and service integrations
-# Uses wildcard pattern for tenant streams since Openflow needs to read from all tenant streams
+# IAM - OpenFlow user with access keys for Kinesis connector
+# Uses wildcard pattern for tenant streams since OpenFlow needs to read from all tenant streams
 module "iam" {
   source = "./modules/iam"
 
-  project_name           = var.project_name
-  environment            = var.environment
-  aws_region             = var.aws_region
-  snowflake_account_id   = var.snowflake_account_id
-  snowflake_external_id  = var.snowflake_external_id
-  # Allow Snowflake/Openflow to read from any tenant stream (smdh-*-stream pattern)
-  kinesis_stream_arns    = ["arn:aws:kinesis:${var.aws_region}:${data.aws_caller_identity.current.account_id}:stream/smdh-*-stream"]
-  create_lambda_role     = false
-  secrets_manager_arns   = [module.secrets_manager.secret_arn]
+  project_name        = var.project_name
+  environment         = var.environment
+  aws_region          = var.aws_region
+  # Allow OpenFlow to read from any tenant stream (smdh-*-stream pattern)
+  kinesis_stream_arns = ["arn:aws:kinesis:${var.aws_region}:${data.aws_caller_identity.current.account_id}:stream/smdh-*-stream"]
+  create_lambda_role  = false
+  secrets_manager_arns = [module.secrets_manager.secret_arn]
 
   tags = merge(
     local.common_tags,
     {
       Component   = "Security"
       Service     = "IAM"
-      Description = "Cross-account roles and permissions"
+      Description = "OpenFlow IAM user and permissions"
       Integration = "Snowflake"
     }
   )

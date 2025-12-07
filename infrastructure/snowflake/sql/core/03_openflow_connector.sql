@@ -144,6 +144,10 @@ GRANT ROLE OPENFLOW_RUNTIME_ROLE_KINESIS TO ROLE OPENFLOW_ADMIN;
 -- Switch back to accountadmin for grants
 USE ROLE ACCOUNTADMIN;
 
+-- Grant role to ACCOUNTADMIN so Openflow runtime can assume it
+-- This is REQUIRED for Openflow to use the role in connectors
+GRANT ROLE OPENFLOW_RUNTIME_ROLE_KINESIS TO ROLE ACCOUNTADMIN;
+
 -- Grant warehouse access
 GRANT USAGE, OPERATE ON WAREHOUSE SMDH_WH TO ROLE OPENFLOW_RUNTIME_ROLE_KINESIS;
 

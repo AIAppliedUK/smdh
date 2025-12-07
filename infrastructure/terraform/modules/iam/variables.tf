@@ -17,22 +17,8 @@ variable "aws_region" {
   default     = "eu-west-2"
 }
 
-variable "snowflake_account_id" {
-  description = "Snowflake AWS account ID for cross-account trust"
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
-variable "snowflake_external_id" {
-  description = "External ID for Snowflake role assumption (security requirement)"
-  type        = string
-  sensitive   = true
-  default     = ""
-}
-
 variable "kinesis_stream_arns" {
-  description = "List of Kinesis stream ARNs that Snowflake can access"
+  description = "List of Kinesis stream ARNs that OpenFlow can access"
   type        = list(string)
 }
 

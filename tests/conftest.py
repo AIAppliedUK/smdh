@@ -1,11 +1,10 @@
 """
-Pytest configuration and fixtures for SMDH Snowflake testing
+Pytest configuration and fixtures for SMDH testing
 Provides database connections, test data, and helper utilities
 
 This module includes:
 - Basic Snowflake connection fixtures
-- Simple test data generators
-- Manufacturing scenario fixtures (see conftest_manufacturing_scenarios.py)
+- Test data generators for IoT pipeline testing
 """
 
 import pytest
@@ -14,25 +13,6 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Generator
 import logging
-
-# Register manufacturing scenario fixtures with pytest
-pytest_plugins = ['tests.conftest_manufacturing_scenarios']
-
-# Import classes for use in tests (fixtures are registered via pytest_plugins)
-try:
-    from .conftest_manufacturing_scenarios import (
-        ManufacturingFacility,
-        ManufactoringSite,
-        ProductionLine,
-        Machine,
-        Sensor,
-        EnvironmentalZone,
-        RealisticManufacturingSimulator,
-    )
-except ImportError:
-    # If manufacturing scenarios not available, that's ok - tests will skip if needed
-    logger = logging.getLogger(__name__)
-    logger.debug("Manufacturing scenario classes not imported (module may not be available)")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

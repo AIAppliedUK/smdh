@@ -329,10 +329,36 @@ UNION ALL SELECT $tenant_id, 'schema_version', TO_VARIANT('1.0'), 'Database sche
 SELECT 'Created tenant metadata table with initial configuration' AS result;
 
 -- ============================================================================
--- 10. Verification
+-- 10. Grant Openflow Runtime Role Access
+-- ============================================================================
+-- This enables the Openflow Kinesis connector to write data to the tenant's RAW schema
+
+SELECT '10. Granting Openflow Runtime Role Access...' AS step;
+
+USE ROLE ACCOUNTADMIN;
+
+-- Grant database access
+GRANT USAGE ON DATABASE IDENTIFIER($database_name) TO ROLE OPENFLOW_RUNTIME_ROLE_KINESIS;
+
+-- Grant schema access (RAW is where Kinesis data lands)
+GRANT USAGE ON SCHEMA IDENTIFIER($database_name || '.RAW') TO ROLE OPENFLOW_RUNTIME_ROLE_KINESIS;
+
+-- Grant CREATE TABLE for auto-creating landing tables if needed
+GRANT CREATE TABLE ON SCHEMA IDENTIFIER($database_name || '.RAW') TO ROLE OPENFLOW_RUNTIME_ROLE_KINESIS;
+
+-- Grant SELECT and INSERT on all current tables in RAW schema
+GRANT SELECT, INSERT ON ALL TABLES IN SCHEMA IDENTIFIER($database_name || '.RAW') TO ROLE OPENFLOW_RUNTIME_ROLE_KINESIS;
+
+-- Grant SELECT and INSERT on future tables in RAW schema
+GRANT SELECT, INSERT ON FUTURE TABLES IN SCHEMA IDENTIFIER($database_name || '.RAW') TO ROLE OPENFLOW_RUNTIME_ROLE_KINESIS;
+
+SELECT 'Granted Openflow access to ' || $database_name || '.RAW schema' AS result;
+
+-- ============================================================================
+-- 11. Verification
 -- ============================================================================
 
-SELECT '10. Verifying Tenant Database Setup...' AS step;
+SELECT '11. Verifying Tenant Database Setup...' AS step;
 
 -- Verify database
 SHOW DATABASES LIKE 'smdh_tenant_%';
@@ -364,7 +390,7 @@ FROM smdh_infrastructure.tenant_configs.tenants
 WHERE tenant_id = $tenant_id;
 
 -- ============================================================================
--- 11. Summary
+-- 12. Summary
 -- ============================================================================
 
 SELECT '╔════════════════════════════════════════════════════════════════╗' AS summary
@@ -380,21 +406,27 @@ UNION ALL SELECT '  • Number of Sites: ' || $num_sites
 UNION ALL SELECT ''
 UNION ALL SELECT 'Created Resources:'
 UNION ALL SELECT '  [OK] Database: smdh_tenant_' || $tenant_id
-UNION ALL SELECT '  [OK] Schemas: raw, normalized, aggregated, analytics'
+UNION ALL SELECT '  [OK] Schemas: raw, normalized, aggregated, analytics, mart'
 UNION ALL SELECT '  [OK] File Formats: ff_json, ff_csv, ff_parquet'
 UNION ALL SELECT '  [OK] Stages: stage_uploads, stage_errors'
 UNION ALL SELECT '  [OK] Roles: _admin, _user, _readonly'
 UNION ALL SELECT '  [OK] Metadata: tenant_metadata table'
 UNION ALL SELECT '  [OK] Registered in tenant registry'
+UNION ALL SELECT '  [OK] Openflow access granted to RAW schema'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Next Steps:'
-UNION ALL SELECT '  1. Run 11_create_schemas.sql (if not auto-included)'
-UNION ALL SELECT '  2. Run 12_create_tables.sql to create data tables'
-UNION ALL SELECT '  3. Run 13_create_streams.sql to enable CDC'
-UNION ALL SELECT '  4. Run 14_create_tasks.sql to configure processing'
-UNION ALL SELECT '  5. Run 15_create_dynamic_tables.sql for aggregations'
-UNION ALL SELECT '  6. Run 16_create_roles.sql for additional RBAC (optional)'
-UNION ALL SELECT '  7. Run 17_create_monitoring.sql for tenant dashboards'
+UNION ALL SELECT '  1. Run 12_create_tables.sql to create data tables'
+UNION ALL SELECT '  2. Run 13_create_streams.sql to enable CDC'
+UNION ALL SELECT '  3. Run 14_create_tasks.sql to configure processing'
+UNION ALL SELECT '  4. Run 15_create_dynamic_tables.sql for aggregations'
+UNION ALL SELECT '  5. Run 16_create_roles.sql for additional RBAC (optional)'
+UNION ALL SELECT '  6. Run 17_create_monitoring.sql for tenant dashboards'
+UNION ALL SELECT ''
+UNION ALL SELECT 'Openflow Configuration:'
+UNION ALL SELECT '  Target Database: SMDH_TENANT_' || UPPER($tenant_id)
+UNION ALL SELECT '  Target Schema: RAW'
+UNION ALL SELECT '  Target Table: SENSOR_READINGS'
+UNION ALL SELECT '  Runtime Role: OPENFLOW_RUNTIME_ROLE_KINESIS'
 UNION ALL SELECT ''
 UNION ALL SELECT 'Verification:'
 UNION ALL SELECT '  USE DATABASE smdh_tenant_' || $tenant_id || ';'

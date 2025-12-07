@@ -2,13 +2,20 @@
 
  Executive Summary
 
-This document outlines what needs to be implemented to deploy the Smart Manufacturing Data Hub (SMDH) solution, based on the architecture design and implementation guide. You have:
+This document outlines the implementation plan for the Smart Manufacturing Data Hub (SMDH) solution. **Status: IMPLEMENTED** (December 2025).
 
+**Current State:**
+- Core infrastructure deployed (AWS IoT Core, Kinesis, Snowflake OpenFlow)
+- Demo tenant `manufacturing_demo` fully operational (5 sites)
+- E2E pipeline tested and validated
+- Deployment guides complete: `infrastructure/deployment/`
+
+**Prerequisites (completed):**
 -  Admin access to Snowflake tenant
 -  AWS sandpit with CLI configured
 -  Architecture documentation complete
 
-Estimated Timeline: - weeks for initial implementation with single tenant
+Timeline (actual): ~4 weeks for initial implementation with single tenant
 
 ---
 
@@ -86,11 +93,13 @@ infrastructure/terraform/
         variables.tf
  environments/
      dev/
-        terraform.tfvars          Dev environment vars
-     staging/
-        terraform.tfvars          Staging vars
+        01_tags.tfvars            Resource tagging configuration
+        02_core.tfvars            Core infrastructure settings
+        03_tenants.tfvars         Tenant definitions (modify for new tenants)
      prod/
-         terraform.tfvars          Production vars
+        01_tags.tfvars            Production tagging
+        02_core.tfvars            Production core settings
+        03_tenants.tfvars         Production tenant definitions
 ```
 
 Required Resources:
@@ -298,8 +307,9 @@ infrastructure/snowflake/
 │   ├── setup_openflow.sh                  # Automated Openflow setup
 │   ├── onboard_tenant.sh                  # Tenant onboarding
 │   └── validate_setup.sh                  # Validation script
-└── docs/deployment/
-    └── Tenant_Onboarding_Guide.md         # Comprehensive onboarding guide
+└── deployment/
+    ├── Core_Infrastructure_Deployment_Guide.md  # Core infrastructure setup
+    └── Tenant_Onboarding_Guide.md               # Tenant onboarding guide
 ```
 
  .. Openflow Connector Setup (03_openflow_connector.sql)
@@ -314,11 +324,14 @@ This script creates all Snowflake resources needed for Kinesis integration:
 - Monitoring views for connector health
 
 **Important**: After running the SQL script, manual UI steps are required in Snowsight:
-1. Create Deployment (Data > Openflow > Create Deployment)
+1. Navigate to **Ingestion > Openflow** and create Deployment
 2. Create Runtime with `OPENFLOW_RUNTIME_ROLE_KINESIS`
-3. Add Kinesis Connector with stream-to-table mapping
+3. Add Kinesis Connector with **critical configuration**:
+   - AWS Authentication: **IAM Access Keys** (NOT role assumption)
+   - Consumer Type: **Shared Throughput** (NOT Enhanced Fan-Out)
+   - Snowflake Auth: **SNOWFLAKE_SESSION_TOKEN**
 
-See: `docs/deployment/Tenant_Onboarding_Guide.md` for complete instructions
+See: `infrastructure/deployment/Tenant_Onboarding_Guide.md` for complete instructions
 
 Key SQL Scripts:
 
@@ -558,7 +571,7 @@ Purpose: Automate complete tenant provisioning from zero to production
 - Snowflake: Tenant database with RAW/NORMALIZED/AGGREGATED/ANALYTICS schemas
 - Openflow: Stream-to-table mapping added to Kinesis connector configuration
 
-**Detailed Onboarding Guide**: See `docs/deployment/Tenant_Onboarding_Guide.md` for complete step-by-step instructions including:
+**Detailed Onboarding Guide**: See `infrastructure/deployment/Tenant_Onboarding_Guide.md` for complete step-by-step instructions including:
 - AWS Kinesis stream creation
 - IAM role configuration
 - IoT rule setup
@@ -663,21 +676,15 @@ echo ""
 log_info "Phase : Deploying AWS infrastructure with Terraform..."
 cd "$PROJECT_ROOT/terraform"
 
- Create tenant variable file
-cat > "environments/prod/tenant_${TENANT_ID}.auto.tfvars" <<EOF
-tenants = {
-  ${TENANT_ID} = {
-    name           = "${TENANT_NAME}"
-    num_sites      = ${NUM_SITES}
-    retention_days = ${RETENTION_DAYS}
-  }
-}
-EOF
+ Add tenant to 03_tenants.tfvars (edit environments/prod/03_tenants.tfvars)
+# Add tenant block with: name, num_sites, retention_days, warehouse_size, contact_email, sensors_per_site
 
 terraform init
-terraform plan -var-file="environments/prod/terraform.tfvars" \
-               -var-file="environments/prod/tenant_${TENANT_ID}.auto.tfvars" \
-               -out=tfplan
+terraform plan \
+  -var-file="environments/prod/01_tags.tfvars" \
+  -var-file="environments/prod/02_core.tfvars" \
+  -var-file="environments/prod/03_tenants.tfvars" \
+  -out=tfplan
 
 read -p "Review plan and press ENTER to apply, or Ctrl+C to cancel..."
 
@@ -1036,8 +1043,10 @@ cd infrastructure/terraform
 terraform init
 
  . Create dev environment
-cp environments/dev/terraform.tfvars.example environments/dev/terraform.tfvars
- Edit with your values
+# Edit environments/dev/ tfvars files:
+#   - 01_tags.tfvars (project tags)
+#   - 02_core.tfvars (AWS settings)
+#   - 03_tenants.tfvars (tenant definitions)
 ```
 
  . Testing Workflow
@@ -1045,19 +1054,25 @@ cp environments/dev/terraform.tfvars.example environments/dev/terraform.tfvars
 ```bash
  . Plan infrastructure changes
 cd infrastructure/terraform
-terraform plan -var-file=environments/dev/terraform.tfvars
+terraform plan \
+  -var-file=environments/dev/01_tags.tfvars \
+  -var-file=environments/dev/02_core.tfvars \
+  -var-file=environments/dev/03_tenants.tfvars
 
  . Apply to dev environment
-terraform apply -var-file=environments/dev/terraform.tfvars
+terraform apply \
+  -var-file=environments/dev/01_tags.tfvars \
+  -var-file=environments/dev/02_core.tfvars \
+  -var-file=environments/dev/03_tenants.tfvars
 
  . Test Snowflake scripts
 snowsql -f snowflake/_infrastructure_setup.sql
 
  . Run health checks
-./scripts/check_system_health.sh test_tenant
+./scripts/check_system_health.sh manufacturing_demo
 
  . Run end-to-end tests
-./scripts/test_data_flow.sh test_tenant
+./scripts/test_iot_pipeline.sh manufacturing_demo SITE_001 5
 ```
 
  . Deployment Workflow
@@ -1083,8 +1098,14 @@ git push origin feature/add-monitoring
 git checkout main
 git pull
 cd infrastructure/terraform
-terraform plan -var-file=environments/prod/terraform.tfvars
-terraform apply -var-file=environments/prod/terraform.tfvars
+terraform plan \
+  -var-file=environments/prod/01_tags.tfvars \
+  -var-file=environments/prod/02_core.tfvars \
+  -var-file=environments/prod/03_tenants.tfvars
+terraform apply \
+  -var-file=environments/prod/01_tags.tfvars \
+  -var-file=environments/prod/02_core.tfvars \
+  -var-file=environments/prod/03_tenants.tfvars
 ```
 
 ---
@@ -1105,11 +1126,12 @@ terraform apply -var-file=environments/prod/terraform.tfvars
 
 | File | Purpose |
 |------|---------|
-| `terraform.tfvars` | Terraform variable values |
-| `tenant_.auto.tfvars` | Per-tenant configuration |
+| `01_tags.tfvars` | Project tags configuration |
+| `02_core.tfvars` | AWS and core settings |
+| `03_tenants.tfvars` | Tenant definitions |
 | `.sql` | Snowflake DDL scripts |
 | `.sh` | Bash automation scripts |
-| `.env` | Environment variables |
+| `.env` | Environment variables (not committed) |
 
  . Documentation Deliverables
 
@@ -1150,12 +1172,11 @@ terraform apply -var-file=environments/prod/terraform.tfvars
 
  . Next Steps
 
-. Review this plan with your team and stakeholders
-. Set up development environment following Section .
-. Start with Phase  (Infrastructure as Code) from Section .
-. Create a GitHub project board to track progress
-. Schedule weekly reviews to assess progress
+**Implementation complete.** For ongoing operations:
 
-Recommended Start: Begin with creating the Terraform module for AWS IoT Core, as it's the foundation of the architecture.
+1. To onboard new tenants: See `infrastructure/deployment/Tenant_Onboarding_Guide.md`
+2. To deploy core infrastructure: See `infrastructure/deployment/Core_Infrastructure_Deployment_Guide.md`
+3. To run health checks: `./scripts/check_system_health.sh <tenant_id>`
+4. To test E2E pipeline: `./scripts/test_iot_pipeline.sh <tenant_id> <site_id> <count>`
 
-Would you like me to start implementing any specific component?
+For architecture details, see `SMDH_Infrastructure_Implementation.md`.
