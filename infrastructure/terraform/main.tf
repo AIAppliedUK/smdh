@@ -6,6 +6,49 @@
 # Streams are created in the tenant module (modules/tenant), NOT as a shared resource.
 # This architecture is REQUIRED because Openflow cannot filter records from a shared stream.
 
+# ============================================================================
+# Local Variables for Certificate File Generation
+# ============================================================================
+
+locals {
+  # Base path for certificate files
+  certificates_base_path = "${path.module}/../deployment/certificates"
+
+  # Build a non-sensitive map of tenant/thing keys for for_each iteration
+  # This only contains the keys (tenant_id and thing_name), not the sensitive cert data
+  tenant_thing_keys = merge([
+    for tenant_id, tenant_config in module.tenants : {
+      for thing_name in tenant_config.thing_names :
+        "${tenant_id}/${thing_name}" => {
+          tenant_id  = tenant_id
+          thing_name = thing_name
+        }
+    }
+  ]...)
+}
+
+# ============================================================================
+# Certificate File Generation
+# ============================================================================
+
+# Write certificate PEM files for each device
+resource "local_file" "device_certificates" {
+  for_each = local.tenant_thing_keys
+
+  filename        = "${local.certificates_base_path}/${each.value.tenant_id}/${each.value.thing_name}_certificate.pem"
+  content         = module.tenants[each.value.tenant_id].certificate_pems[each.value.thing_name]
+  file_permission = "0644"
+}
+
+# Write private key files for each device
+resource "local_sensitive_file" "device_private_keys" {
+  for_each = local.tenant_thing_keys
+
+  filename        = "${local.certificates_base_path}/${each.value.tenant_id}/${each.value.thing_name}_private_key.pem"
+  content         = module.tenants[each.value.tenant_id].private_keys[each.value.thing_name]
+  file_permission = "0600"
+}
+
 # Core Infrastructure Modules
 
 # IoT Core - MQTT broker and thing types

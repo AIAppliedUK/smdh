@@ -226,3 +226,19 @@ output "thing_group_queries" {
     }
   }
 }
+
+# ============================================================================
+# Certificate File Outputs
+# ============================================================================
+
+output "certificate_files" {
+  description = "Paths to generated certificate files for each tenant device"
+  value = {
+    for key, thing_data in local.tenant_thing_keys : key => {
+      certificate_path = "${local.certificates_base_path}/${thing_data.tenant_id}/${thing_data.thing_name}_certificate.pem"
+      private_key_path = "${local.certificates_base_path}/${thing_data.tenant_id}/${thing_data.thing_name}_private_key.pem"
+      thing_name       = thing_data.thing_name
+      tenant_id        = thing_data.tenant_id
+    }
+  }
+}
