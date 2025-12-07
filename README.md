@@ -34,56 +34,67 @@ The Smart Manufacturing Data Hub (SMDH) is a cloud-native, multi-tenant IoT plat
 ### Technology Stack
 
 **Cloud Infrastructure:**
-- **AWS** (eu-west-2 London region)
-- **Snowflake** Multi-Tenant Data Warehouse
-- **React 18+** with TypeScript
-- **Material-UI (MUI)** framework
+- **AWS** (eu-west-2 London region) ✅ Deployed
+- **Snowflake** Multi-Tenant Data Warehouse ✅ Deployed
+- **React 18+** with TypeScript 🚧 Planned
+- **Material-UI (MUI)** framework 🚧 Planned
 
 **Data Processing:**
-- **AWS IoT Core** for MQTT message ingestion
-- **Apache Flink** on Amazon EMR for real-time processing
-- **Amazon Kinesis** for stream processing
-- **AWS Lambda** for serverless compute
+- **AWS IoT Core** for MQTT message ingestion ✅ Deployed
+- **Amazon Kinesis** for stream processing ✅ Deployed
+- **AWS Lambda** for serverless compute 🚧 Planned
+- **Apache Flink** on Amazon EMR 📋 Future
 
 **Analytics & Visualization:**
-- **Amazon QuickSight** for primary BI dashboards
-- **Grafana** for real-time monitoring
-- **Power BI Embedded** for advanced analytics
-- **Amazon SageMaker** for machine learning
+- **Streamlit** for manufacturing dashboards 🚧 In Design
+- **Amazon CloudWatch** for monitoring ✅ Deployed
+- **Amazon QuickSight** for BI dashboards 📋 Future
+- **Grafana** for real-time monitoring 📋 Future
+- **Power BI Embedded** 📋 Future
+- **Amazon SageMaker** for ML models 📋 Future
 
 ## Project Structure
 
 ```
 smdh/
-├── docs/                          # Documentation
-│   ├── architecture/              # Architecture diagrams and guides
-│   ├── api/                       # API documentation
-│   └── deployment/                # Deployment guides
-├── infrastructure/                # Infrastructure as Code
-│   ├── terraform/                 # Terraform configurations
-│   ├── cloudformation/            # CloudFormation templates
-│   └── kubernetes/                # K8s manifests
-├── applications/                  # Application code
-│   ├── web-portal/                # React web application
-│   ├── api-gateway/               # API Gateway configurations
-│   └── lambda-functions/          # Serverless functions
-├── data-pipelines/                # Data processing pipelines
-│   ├── ingestion/                 # Data ingestion scripts
-│   ├── transformation/            # ETL processes
-│   └── analytics/                 # Analytics and ML models
-├── use-cases/                     # Use case specific implementations
-│   ├── machine-utilization/       # MUA implementation
-│   ├── air-quality/               # AQMA implementation
-│   └── job-tracking/              # Job tracking implementation
-├── tests/                         # Test suites
-│   ├── unit/                      # Unit tests
-│   ├── integration/               # Integration tests
-│   └── e2e/                       # End-to-end tests
-└── tools/                         # Development tools and scripts
-    ├── deployment/                # Deployment scripts
-    ├── monitoring/                # Monitoring configurations
-    └── utilities/                 # Utility scripts
+├── docs/                          # Comprehensive documentation
+│   ├── architecture/              # Architecture decision records and diagrams ✅
+│   ├── detailed-design/           # Detailed design specifications ✅
+│   ├── requirements/              # System requirements ✅
+│   ├── deployment/                # Sensor deployment guides ✅
+│   ├── sensor-docs/               # Device specifications (external PDFs)
+│   └── api/                       # API documentation (📋 In Progress)
+├── infrastructure/                # Infrastructure as Code ✅ DEPLOYED
+│   ├── terraform/                 # AWS Terraform configs (48 resources) ✅
+│   ├── snowflake/                 # Snowflake SQL setup ✅
+│   └── scripts/                   # Deployment and validation scripts ✅
+├── applications/                  # Application layer
+│   ├── web-portal/                # Streamlit analytics dashboards (🚧 Design Complete)
+│   ├── data-layer/                # Data layer specifications ✅
+│   └── [api-gateway]/             # REST API (📋 Future)
+├── tests/                         # Comprehensive test suites ✅
+│   ├── unit/                      # Unit tests (power, ML, state classification)
+│   ├── integration/               # Data flow integration tests
+│   ├── e2e/                       # End-to-end pipeline tests
+│   ├── device-simulators/         # IoT device simulation tools
+│   ├── api-testing/               # REST API testing (Postman)
+│   └── certificates/              # Test certificates and CA files
+├── use-cases/                     # Use case documentation
+│   ├── Air Quality Use Case.docx  # AQMA specifications
+│   ├── Machine Utilisation Use Case.docx  # MUA specifications
+│   └── Use Case-Muzzle Movement.docx  # Job tracking specifications
+├── templates/                     # Document templates
+├── data-pipelines/                # Data processing pipeline definitions (🚧 Framework)
+└── tools/                         # Development utilities
+    ├── deployment/                # Deployment tools
+    ├── monitoring/                # Monitoring scripts
+    └── utilities/                 # Helper scripts
 ```
+
+**Legend:**
+- ✅ = Implemented and tested
+- 🚧 = Design complete, implementation in progress
+- 📋 = Planned for next phase
 
 ## Quick Start
 
@@ -134,25 +145,32 @@ smdh/
 
 ### Infrastructure Deployment
 
-1. **Deploy AWS infrastructure**
+1. **Deploy AWS infrastructure with Terraform**
    ```bash
    cd infrastructure/terraform
    terraform init
-   terraform plan
-   terraform apply
+   terraform plan -var-file=environments/dev/terraform.tfvars
+   terraform apply -var-file=environments/dev/terraform.tfvars
    ```
 
-2. **Configure Snowflake**
+2. **Configure Snowflake infrastructure**
    ```bash
-   cd ../../data-pipelines/snowflake
-   python setup_snowflake.py
+   cd ../snowflake
+   ./validate_setup.sh test_tenant
+   # This runs all 4 core setup scripts + tenant onboarding
    ```
 
-3. **Deploy data pipelines**
+3. **Verify deployment**
    ```bash
-   cd ../ingestion
-   python deploy_pipelines.py
+   # Test IoT Core connectivity
+   cd ../../tests
+   python device-simulators/test-iot-transmission.py --endpoint <your-endpoint> ...
+
+   # Validate data flow
+   python integration/validate-data-flow.py --region eu-west-2 ...
    ```
+
+For detailed deployment instructions, see [Deployment Checklist](DEPLOYMENT_CHECKLIST.md).
 
 ## Data Sources
 
@@ -203,12 +221,36 @@ cd data-pipelines
 python -m pytest tests/
 ```
 
-## Documentation
+## Documentation & Guides
 
-- [Architecture Guide](docs/architecture/SMDH_Architecture_Complete_Guide.md)
-- [API Documentation](docs/api/README.md)
-- [Deployment Guide](docs/deployment/README.md)
-- [Use Case Documentation](use-cases/README.md)
+### Implementation Status & Planning
+- [Implementation Status](IMPLEMENTATION_STATUS.md) - What's built, in progress, and planned
+- [Feature Roadmap](FEATURE_ROADMAP.md) - Next steps and timeline
+- [Known Limitations](KNOWN_LIMITATIONS.md) - Current constraints and workarounds
+
+### Architecture & Design
+- [Architecture Options](docs/architecture/smdh-architecture-option-a-multiBI.md) - Complete analysis of 4 architecture options
+- [Detailed AWS Design](docs/detailed-design/SMDH%20AWS%20design.md) - Current implementation design
+- [System Requirements](docs/requirements/SMDH-System-Requirements.md) - Complete specs
+
+### Infrastructure & Deployment
+- [Terraform Guide](infrastructure/terraform/README.md) - AWS infrastructure as code
+- [Snowflake Setup](infrastructure/snowflake/README.md) - Data warehouse configuration
+- [Deployment Checklist](DEPLOYMENT_CHECKLIST.md) - Step-by-step deployment
+- [Deployment Notes](infrastructure/DEPLOYMENT_NOTES.md) - Previous deployment record
+
+### Applications & Data Layer
+- [Data Layer Design](applications/data-layer/README.md) - Schema design and implementation guide
+- [Streamlit Dashboard Guide](applications/web-portal/STREAMLIT_DASHBOARD_GUIDE.md) - Web portal architecture
+- [Dashboard Pages Design](applications/web-portal/STREAMLIT_DASHBOARD_PAGES.md) - 8 analytics dashboard specifications
+- [Data Ingestion Mapping](applications/data-layer/DATA_INGESTION_MAPPING.md) - MQTT to Snowflake data flow
+
+### Testing
+- [Testing Guide](tests/README.md) - Complete test suite documentation
+- [Test Results](tests/TEST_SUMMARY.md) - Latest test execution results
+
+### Use Cases
+- See [use-cases/](use-cases/) for Air Quality, Machine Utilization, and Job Tracking specifications
 
 ## Contributing
 
@@ -225,25 +267,60 @@ python -m pytest tests/
 - Update documentation for any API changes
 - Ensure all tests pass before submitting PRs
 
-## Roadmap
+## Current Implementation Status
 
-### Phase 1 (Current)
-- Core infrastructure setup
-- Basic MUA implementation
-- AQMA foundation
-- Job tracking prototype
+### ✅ Fully Implemented & Production Ready
 
-### Phase 2 (Q1 2026)
-- Advanced analytics dashboards
-- Machine learning models
+**AWS Infrastructure**
+- IoT Core (MQTT broker, thing types, certificates)
+- Kinesis Data Streams (on-demand scaling)
+- CloudWatch (dashboards, alarms, logging)
+- IAM roles (Snowflake cross-account integration)
+- Secrets Manager (credential storage)
+
+**Snowflake Data Warehouse**
+- Multi-tenant infrastructure database
+- Tenant onboarding automation
+- Streams and tasks for real-time ETL
+- Dynamic tables for live aggregations
+- RBAC and monitoring views
+
+**Testing & Validation**
+- Device simulator (MQTT transmission)
+- Integration tests (data flow validation)
+- E2E tests (raw → power → normalized → aggregated)
+- API testing collection (Postman)
+
+### 🚧 In Progress or Design Complete
+
+**Analytics Layer**
+- Streamlit dashboard portal (design complete, code framework ready)
+- Data layer schema (MART, ML_MODELS - SQL designed, implementation ready)
+- 8 dashboard pages (full specifications documented)
+
+**Streamlit Web Portal**
+- Architecture designed ✅
+- 8 dashboard page specs documented ✅
+- Snowflake connector utilities designed ✅
+- **Code implementation**: Need to scaffold from design
+
+### 📋 Planned for Future Phases
+
+**Phase 2 Features**
+- REST API Gateway (design exists)
+- Lambda functions for custom logic
 - Mobile application
-- API marketplace
+- Advanced ML models (SageMaker)
 
-### Phase 3 (Q2 2026)
-- Predictive maintenance
+**Phase 3+ Features**
+- Apache Flink for complex stream processing
+- Power BI Embedded analytics
+- Grafana monitoring dashboards
+- Predictive maintenance models
 - Supply chain optimization
 - Computer vision integration
-- Voice assistant integration
+
+For details, see [Feature Roadmap](FEATURE_ROADMAP.md).
 
 ## Support
 

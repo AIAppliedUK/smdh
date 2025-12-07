@@ -1,0 +1,265 @@
+-- ============================================================================
+-- SMDH Shared Resources Setup
+-- ============================================================================
+-- Purpose: Create shared roles, service accounts, and monitoring views
+-- Usage: snowsql -f 02_shared_resources.sql
+-- Author: SMDH Platform Team
+-- Version: 1.0
+-- ============================================================================
+-- Prerequisites: 01_infrastructure_setup.sql (creates warehouse and database)
+-- ============================================================================
+-- This script creates:
+-- - Platform roles (tenant_operator, data_engineer, analytics_user)
+-- - Service account for automation
+-- - Warehouse monitoring views
+-- - Cost tracking views
+-- ============================================================================
+
+USE ROLE ACCOUNTADMIN;
+
+-- Display banner
+SELECT '╔════════════════════════════════════════════════════════════════╗' AS banner
+UNION ALL SELECT '║  SMDH Platform - Shared Resources Setup                    ║'
+UNION ALL SELECT '╚════════════════════════════════════════════════════════════╝';
+
+USE WAREHOUSE SMDH_WH;
+
+-- ============================================================================
+-- 1. Create Tenant Operations Role
+-- ============================================================================
+
+SELECT '1. Creating Tenant Operations Role...' AS step;
+
+CREATE ROLE IF NOT EXISTS smdh_tenant_operator
+    COMMENT = 'Role for tenant onboarding and lifecycle management operations.';
+
+-- Grant warehouse usage
+GRANT USAGE ON WAREHOUSE SMDH_WH TO ROLE smdh_tenant_operator;
+
+-- Grant infrastructure database access
+GRANT USAGE ON DATABASE smdh_infrastructure TO ROLE smdh_tenant_operator;
+GRANT USAGE ON ALL SCHEMAS IN DATABASE smdh_infrastructure TO ROLE smdh_tenant_operator;
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA smdh_infrastructure.tenant_configs TO ROLE smdh_tenant_operator;
+GRANT SELECT, INSERT ON ALL TABLES IN SCHEMA smdh_infrastructure.monitoring TO ROLE smdh_tenant_operator;
+
+-- Grant database creation (for new tenants)
+GRANT CREATE DATABASE ON ACCOUNT TO ROLE smdh_tenant_operator;
+
+-- Grant role to SYSADMIN
+GRANT ROLE smdh_tenant_operator TO ROLE SYSADMIN;
+
+-- ============================================================================
+-- 2. Create Data Engineer Role
+-- ============================================================================
+
+SELECT '2. Creating Data Engineer Role...' AS step;
+
+CREATE ROLE IF NOT EXISTS smdh_data_engineer
+    COMMENT = 'Role for data engineers managing ETL pipelines and data transformations.';
+
+-- Grant warehouse usage
+GRANT USAGE ON WAREHOUSE SMDH_WH TO ROLE smdh_data_engineer;
+GRANT OPERATE ON WAREHOUSE SMDH_WH TO ROLE smdh_data_engineer;
+
+-- Grant infrastructure database access
+GRANT USAGE ON DATABASE smdh_infrastructure TO ROLE smdh_data_engineer;
+GRANT USAGE ON ALL SCHEMAS IN DATABASE smdh_infrastructure TO ROLE smdh_data_engineer;
+GRANT SELECT ON ALL TABLES IN DATABASE smdh_infrastructure TO ROLE smdh_data_engineer;
+GRANT SELECT ON FUTURE TABLES IN DATABASE smdh_infrastructure TO ROLE smdh_data_engineer;
+
+-- Grant role to SYSADMIN
+GRANT ROLE smdh_data_engineer TO ROLE SYSADMIN;
+
+-- ============================================================================
+-- 3. Create Analytics User Role (Template for Tenants)
+-- ============================================================================
+
+SELECT '3. Creating Analytics User Role Template...' AS step;
+
+CREATE ROLE IF NOT EXISTS smdh_analytics_user
+    COMMENT = 'Base role template for analytics users. Tenant-specific roles will inherit from this.';
+
+-- Grant analytics warehouse usage only
+GRANT USAGE ON WAREHOUSE SMDH_WH TO ROLE smdh_analytics_user;
+
+-- This role will be granted to tenant-specific roles
+-- Each tenant role will inherit warehouse access but have database-specific permissions
+GRANT ROLE smdh_analytics_user TO ROLE SYSADMIN;
+
+-- ============================================================================
+-- 4. Create Service Account for Automation
+-- ============================================================================
+
+SELECT '4. Creating Service Account for Automation...' AS step;
+
+CREATE USER IF NOT EXISTS smdh_automation_svc
+    PASSWORD = NULL
+    DEFAULT_ROLE = smdh_tenant_operator
+    DEFAULT_WAREHOUSE = SMDH_WH
+    MUST_CHANGE_PASSWORD = FALSE
+    RSA_PUBLIC_KEY = NULL
+    COMMENT = 'Service account for automated tenant onboarding and maintenance. Uses key-pair authentication.';
+
+GRANT ROLE smdh_tenant_operator TO USER smdh_automation_svc;
+
+-- Note: Generate RSA key pair and set public key with:
+-- ALTER USER smdh_automation_svc SET RSA_PUBLIC_KEY = '<public_key>';
+
+-- ============================================================================
+-- 5. Grant Warehouse Monitoring to Monitoring Role
+-- ============================================================================
+
+SELECT '5. Configuring Warehouse Monitoring Access...' AS step;
+
+GRANT USAGE ON WAREHOUSE SMDH_WH TO ROLE smdh_monitoring;
+GRANT MONITOR ON WAREHOUSE SMDH_WH TO ROLE smdh_monitoring;
+
+-- Grant access to SNOWFLAKE.ACCOUNT_USAGE views (required for monitoring views)
+-- This allows roles to query system metrics like warehouse usage, task history, etc.
+GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE smdh_monitoring;
+GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE smdh_infrastructure_admin;
+GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE smdh_data_engineer;
+
+-- ============================================================================
+-- 6. Create Warehouse Utilization Monitoring View
+-- ============================================================================
+
+SELECT '6. Creating Warehouse Utilization Views...' AS step;
+
+USE DATABASE smdh_infrastructure;
+USE SCHEMA monitoring;
+
+CREATE OR REPLACE VIEW v_warehouse_utilization AS
+SELECT
+    warehouse_name,
+    DATE_TRUNC('hour', start_time) AS hour,
+    SUM(credits_used) AS credits_used,
+    COUNT(*) AS metering_records
+FROM SNOWFLAKE.ACCOUNT_USAGE.WAREHOUSE_METERING_HISTORY
+WHERE warehouse_name LIKE 'smdh_%'
+    AND start_time >= DATEADD(day, -7, CURRENT_TIMESTAMP())
+GROUP BY warehouse_name, hour
+ORDER BY hour DESC, warehouse_name;
+
+GRANT SELECT ON v_warehouse_utilization TO ROLE smdh_monitoring;
+
+-- Create real-time warehouse state view
+CREATE OR REPLACE VIEW v_warehouse_state AS
+SELECT
+    name AS warehouse_name,
+    state,
+    size,
+    running,
+    queued,
+    is_suspended,
+    auto_suspend,
+    auto_resume,
+    scaling_policy,
+    min_cluster_count,
+    max_cluster_count,
+    started_clusters,
+    comment
+FROM SNOWFLAKE.INFORMATION_SCHEMA.WAREHOUSES
+WHERE name LIKE 'smdh_%'
+ORDER BY name;
+
+GRANT SELECT ON v_warehouse_state TO ROLE smdh_monitoring;
+
+-- ============================================================================
+-- 7. Create Cost Tracking View
+-- ============================================================================
+
+SELECT '7. Creating Cost Tracking View...' AS step;
+
+CREATE OR REPLACE VIEW v_daily_costs AS
+SELECT
+    DATE_TRUNC('day', start_time) AS usage_date,
+    warehouse_name,
+    SUM(credits_used) AS total_credits,
+    COUNT(*) AS query_count,
+    SUM(credits_used) * 3.00 AS estimated_cost_usd  -- Adjust rate as needed
+FROM SNOWFLAKE.ACCOUNT_USAGE.WAREHOUSE_METERING_HISTORY
+WHERE warehouse_name LIKE 'smdh_%'
+    AND start_time >= DATEADD(day, -30, CURRENT_TIMESTAMP())
+GROUP BY usage_date, warehouse_name
+ORDER BY usage_date DESC, warehouse_name;
+
+GRANT SELECT ON v_daily_costs TO ROLE smdh_monitoring;
+GRANT SELECT ON v_daily_costs TO ROLE smdh_infrastructure_admin;
+
+-- ============================================================================
+-- 8. Create Resource Monitor Status View
+-- ============================================================================
+
+SELECT '8. Creating Resource Monitor Status View...' AS step;
+
+CREATE OR REPLACE VIEW v_resource_monitor_status AS
+SELECT
+    name AS monitor_name,
+    credit_quota,
+    used_credits,
+    remaining_credits,
+    ROUND((used_credits / NULLIF(credit_quota, 0)) * 100, 2) AS usage_pct
+FROM SNOWFLAKE.ACCOUNT_USAGE.RESOURCE_MONITORS
+WHERE name = 'smdh_platform_monitor';
+
+GRANT SELECT ON v_resource_monitor_status TO ROLE smdh_monitoring;
+GRANT SELECT ON v_resource_monitor_status TO ROLE smdh_infrastructure_admin;
+
+-- ============================================================================
+-- 9. Verification
+-- ============================================================================
+
+SELECT '9. Verifying Shared Resources Setup...' AS step;
+
+-- Show warehouses
+SELECT 'Created Warehouses:' AS verification;
+SHOW WAREHOUSES LIKE 'SMDH_%';
+
+-- Show resource monitors
+SELECT 'Created Resource Monitors:' AS verification;
+SHOW RESOURCE MONITORS LIKE 'smdh_%';
+
+-- Show roles
+SELECT 'Created Roles:' AS verification;
+SHOW ROLES LIKE 'smdh_%';
+
+-- Show users
+SELECT 'Created Service Accounts:' AS verification;
+SHOW USERS LIKE 'smdh_%';
+
+-- Test warehouse functionality
+SELECT 'Testing Warehouse Availability:' AS verification;
+USE WAREHOUSE SMDH_WH;
+SELECT CURRENT_WAREHOUSE() AS current_warehouse;
+
+-- ============================================================================
+-- 10. Summary
+-- ============================================================================
+
+SELECT '╔════════════════════════════════════════════════════════════════╗' AS summary
+UNION ALL SELECT '║  SMDH Shared Resources Setup Complete                      ║'
+UNION ALL SELECT '╚════════════════════════════════════════════════════════════╝'
+UNION ALL SELECT ''
+UNION ALL SELECT 'Created Resources:'
+UNION ALL SELECT '  [OK] Roles:'
+UNION ALL SELECT '      - smdh_tenant_operator'
+UNION ALL SELECT '      - smdh_data_engineer'
+UNION ALL SELECT '      - smdh_analytics_user (template)'
+UNION ALL SELECT '  [OK] Service Account: smdh_automation_svc'
+UNION ALL SELECT '  [OK] Monitoring Views: v_warehouse_utilization, v_warehouse_state, v_daily_costs'
+UNION ALL SELECT ''
+UNION ALL SELECT 'Configuration Notes:'
+UNION ALL SELECT '  • Resource monitor and warehouse created in 01_infrastructure_setup.sql'
+UNION ALL SELECT '  • Service account requires RSA public key for key-pair authentication'
+UNION ALL SELECT ''
+UNION ALL SELECT 'Next Steps:'
+UNION ALL SELECT '  1. Set RSA public key for smdh_automation_svc service account'
+UNION ALL SELECT '  2. Run 03_openflow_connector.sql to configure Kinesis integration'
+UNION ALL SELECT '  3. Configure notification email for resource monitor alerts'
+UNION ALL SELECT ''
+UNION ALL SELECT 'Cost Control:'
+UNION ALL SELECT '  • Monitor credit usage: SELECT * FROM v_daily_costs;'
+UNION ALL SELECT '  • Check resource monitor: SELECT * FROM v_resource_monitor_status;'
+UNION ALL SELECT '  • View warehouse state: SELECT * FROM v_warehouse_state;'
+UNION ALL SELECT '============================================================';

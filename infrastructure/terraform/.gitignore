@@ -1,0 +1,39 @@
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Certificates and keys
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+certificates/
+private_keys/
+
+# Sensitive outputs
+certificates.json
+secrets.json
+*-sensitive.json
+
+# Environment files
+.env
+.env.local
+*.secret
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,88 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/28.2.8 Chrome/140.0.7339.240 Electron/38.4.0 Safari/537.36" version="28.2.8">
+  <diagram name="OSM Connectivity Architecture" id="lorawan-arch">
+    <mxGraphModel dx="1186" dy="829" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="600" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="site-container" value="Manufacturing Site" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;verticalAlign=top;fontStyle=1;fontSize=14;spacingTop=5;dashed=1;" parent="1" vertex="1">
+          <mxGeometry x="40" y="40" width="330" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="osm" value="DevTank OSM&#xa;(LoRaWAN + WiFi)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontStyle=1;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="60" y="85" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="gateway" value="LoRaWAN Gateway&#xa;(Milesight UG65&#xa;with Built-in NS)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;fontSize=11;" parent="1" vertex="1">
+          <mxGeometry x="250" y="80" width="120" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="ns-container" value="Network Server (Self-hosted or Cloud)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontColor=#333333;verticalAlign=top;fontStyle=1;fontSize=12;spacingTop=5;dashed=1;" parent="1" vertex="1">
+          <mxGeometry x="40" y="260" width="300" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="chirpstack" value="ChirpStack&#xa;(MQTT with user/pass)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontStyle=1;fontSize=11;" parent="1" vertex="1">
+          <mxGeometry x="110" y="310" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="aws-container" value="AWS Cloud" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontColor=#333333;verticalAlign=top;fontStyle=1;fontSize=14;spacingTop=5;dashed=1;" parent="1" vertex="1">
+          <mxGeometry x="470" y="40" width="200" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="iotcore" value="AWS IoT Core&#xa;(MQTT Broker)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="510" y="85" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="kinesis" value="Kinesis Data&#xa;Streams" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontStyle=1;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="510" y="190" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="snowflake-container" value="Snowflake Cloud" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontColor=#333333;verticalAlign=top;fontStyle=1;fontSize=14;spacingTop=5;dashed=1;" parent="1" vertex="1">
+          <mxGeometry x="470" y="280" width="200" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="snowflake" value="Snowflake&#xa;(Data Warehouse)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontStyle=1;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="510" y="340" width="120" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="conn1" value="Option A:&#xa;LoRaWAN" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#82b366;fontStyle=1;fontSize=10;align=center;" parent="1" source="osm" target="gateway" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="conn2" value="MQTT&#xa;(X.509 TLS)" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#82b366;fontStyle=1;fontSize=9;align=center;" parent="1" source="gateway" target="iotcore" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="conn7" value="Option B:&#xa;WiFi MQTT&#xa;(user/pass)" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#b85450;fontStyle=1;fontSize=9;align=center;dashed=1;" edge="1" parent="1" source="osm" target="chirpstack">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="120" y="220" />
+              <mxPoint x="190" y="220" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="conn6" value="MQTT&#xa;(X.509 TLS)" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#b85450;fontStyle=1;fontSize=9;align=center;dashed=1;" parent="1" source="chirpstack" target="iotcore" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="430" y="335" />
+              <mxPoint x="430" y="115" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="conn3" value="IoT Rules&#xa;Engine" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#d79b00;fontStyle=1;fontSize=10;align=center;" parent="1" source="iotcore" target="kinesis" edge="1">
+          <mxGeometry x="0.0222" relative="1" as="geometry">
+            <Array as="points" />
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="conn4" value="Openflow&#xa;Connector" style="endArrow=classic;html=1;rounded=0;strokeWidth=2;strokeColor=#9673a6;fontStyle=1;fontSize=10;align=center;" parent="1" source="kinesis" target="snowflake" edge="1">
+          <mxGeometry x="-0.5556" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="legend" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;dashed=1;" parent="1" vertex="1">
+          <mxGeometry x="40" y="400" width="370" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-title" value="OSM Connectivity Options" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontStyle=1;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="50" y="405" width="180" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-a" value="━━  Option A: LoRaWAN → Gateway (Built-in NS) → AWS IoT Core (X.509)" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=10;fontColor=#82b366;" parent="1" vertex="1">
+          <mxGeometry x="50" y="428" width="420" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="leg-b" value="- - -  Option B: WiFi MQTT (user/pass) → ChirpStack → AWS IoT Core (X.509)" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=10;fontColor=#b85450;" parent="1" vertex="1">
+          <mxGeometry x="50" y="448" width="420" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="note" value="OSM supports WiFi MQTT with user/pass&#xa;but NOT X.509 certificates.&#xa;ChirpStack bridges to AWS using X.509." style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;darkOpacity=0.05;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;align=left;spacingLeft=5;" vertex="1" parent="1">
+          <mxGeometry x="40" y="490" width="170" height="55" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

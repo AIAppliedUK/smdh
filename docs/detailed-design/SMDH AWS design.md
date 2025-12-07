@@ -10,7 +10,7 @@ The SMDH platform is a multi-tenant IoT analytics system that collects data from
 
 **MQTT is the universal IoT protocol.**
 
-The SMDH platform uses AWS IoT Core as a managed MQTT broker. All sensor data sources connect via MQTT - either directly (DevTank OSM with Wi-Fi) or through LoRaWAN gateways (Milesight UG65). This single, protocol-native approach provides:
+The SMDH platform uses AWS IoT Core as a managed MQTT broker. All sensor data arrives via LoRaWAN gateways (e.g., Milesight UG65) that authenticate to AWS IoT Core using X.509 certificates. DevTank OpenSmartMonitor (OSM) devices connect as LoRaWAN Class A sensors to these gateways—they cannot authenticate directly to AWS IoT Core due to hardware limitations that prevent certificate storage. This gateway-mediated approach provides:
 
 - Persistent connections for high-frequency sensors (1 Hz updates)
 - Native QoS guarantees (at-least-once delivery)
@@ -25,7 +25,7 @@ No custom validation layers, no HTTP polling overhead, no protocol conversions�
 | ----------------------------- | ------------------------------------------ |
 | **Up to 30 separate tenants** | Database-per-tenant isolation in Snowflake |
 | **5-10 sensors per site**     | Modest but steady streaming data volume    |
-| **MQTT-native sensors**       | AWS IoT Core as central MQTT broker        |
+| **LoRaWAN sensors via gateways** | AWS IoT Core as central MQTT broker     |
 | **Real-time monitoring**      | Sub-minute data latency requirements       |
 | **Distributed gateways**      | Multi-AZ deployment, regional endpoints    |
 
@@ -37,7 +37,7 @@ No custom validation layers, no HTTP polling overhead, no protocol conversions�
 
 | Requirement                          | Description                                             | Architecture Solution                                            |
 | ------------------------------------ | ------------------------------------------------------- | ---------------------------------------------------------------- |
-| **FR-001: MQTT ingestion**           | Support MQTT-based sensors via gateways and Wi-Fi       | IoT Core as managed MQTT broker with multi-AZ high availability |
+| **FR-001: MQTT ingestion**           | Support LoRaWAN sensors via authenticated gateways      | IoT Core as managed MQTT broker with multi-AZ high availability |
 | **FR-002: Real-time processing**     | <1 minute from sensor to dashboard for critical metrics | Streaming architecture with Kinesis and Dynamic Tables           |
 | **FR-003: Historical analysis**      | Store 2+ years of data for trend analysis               | Snowflake with Time Travel and configurable retention            |
 | **FR-004: Multi-tenancy**            | Complete data isolation between customers               | Database-per-tenant in Snowflake, X.509 certs per tenant         |
@@ -59,6 +59,7 @@ No custom validation layers, no HTTP polling overhead, no protocol conversions�
 | ----------------------------------------------------- | ---------------------------------------------------------- |
 | **MQTT devices cannot connect directly to Snowflake** | Must use AWS IoT Core as managed MQTT broker               |
 | **Snowflake has no native MQTT support**              | Requires intermediate streaming service (Kinesis)          |
+| **DevTank OSM cannot store X.509 certificates**       | Sensors connect via LoRaWAN to gateways; gateways hold certs |
 | **X.509 certificates expire**                         | Automated rotation via AWS Certificate Manager or Secrets  |
 | **IoT devices require network connectivity**          | Multi-AZ regional deployment, connection state monitoring  |
 
@@ -83,7 +84,7 @@ Acts as the MQTT broker for all IoT devices. Maintains persistent connections wi
 
 **Why it's needed:**
 
-All sensor data arrives via MQTT through Milesight UG65 gateways and DevTank OSM devices, so AWS IoT Core provides the central authentication point for distributed edge devices, manages certificate lifecycles without custom application logic, keeps persistent connections for high-frequency sensors (1 Hz+), and integrates natively with Kinesis through the IoT Rules Engine.
+All sensor data arrives via MQTT through LoRaWAN gateways (e.g., Milesight UG65). DevTank OSM devices connect as LoRaWAN sensors to these gateways—they cannot store X.509 certificates and therefore cannot authenticate directly to AWS IoT Core. The gateways are the authenticated devices that connect to IoT Core, providing the central authentication point for distributed edge deployments, managing certificate lifecycles without custom application logic, maintaining persistent connections for high-frequency sensor streams, and integrating natively with Kinesis through the IoT Rules Engine.
 
 **Traceability**
 
@@ -94,21 +95,160 @@ All sensor data arrives via MQTT through Milesight UG65 gateways and DevTank OSM
 
 #### 3.1.2 Kinesis Data Streams
 
-Buffers and orders streaming data between IoT Core and Snowflake. Provides temporary storage for high-velocity data streams with guaranteed ordering per partition.
+**Architecture: Per-Tenant Streams**
 
-- IoT Core generates data faster than Snowflake can ingest individual messages
-- Provides replay capability if downstream processing fails with 24-hour retention window
-- Maintains message ordering within tenant partitions
-- Enables multiple consumers (future real-time analytics)
-- On-demand capacity mode auto-scales with message volume
+Each tenant receives their own dedicated Kinesis stream (`smdh-{tenant_id}-stream`). This architecture is REQUIRED because Snowflake Openflow cannot filter records from a shared stream—it consumes ALL records.
+
+**Why per-tenant streams instead of shared stream with partitions:**
+
+| Aspect | Shared Stream (Rejected) | Per-Tenant Streams (Implemented) |
+|--------|--------------------------|----------------------------------|
+| Openflow Compatibility | Cannot filter by partition | Works correctly |
+| Data Isolation | Partition key only | Complete physical isolation |
+| Blast Radius | One failure affects all tenants | Isolated per tenant |
+| Scaling | Shared capacity | Independent per tenant |
+| Cost Visibility | Aggregated | Per-tenant CloudWatch metrics |
+
+**Stream Configuration:**
+
+- Stream naming: `smdh-{tenant_id}-stream` (e.g., `smdh-acme_corp-stream`)
+- Mode: On-demand (auto-scales with throughput)
+- Retention: 24 hours (configurable up to 365 days)
+- Encryption: AWS KMS managed keys
+- Partition key: `{site_id}` for ordering within tenant
+
+**Capabilities:**
+
+- Buffers high-velocity data between IoT Core and Snowflake
+- Provides replay capability if downstream processing fails
+- Maintains message ordering within each tenant's stream (by site_id partition)
+- Enables per-tenant monitoring and alerting
+- On-demand capacity mode auto-scales independently per tenant
 
 **Traceability**
 
 - FR-002: Enables real-time processing pipeline
-- NFR-001: Handles high-throughput streaming data
-- NFR-002: Provides durability with multi-AZ replication
+- FR-004: Enforces tenant isolation at stream level
+- NFR-001: Per-tenant auto-scaling handles variable loads
+- NFR-002: Provides durability with multi-AZ replication per stream
 
-Required when using IoT Core for MQTT ingestion. Optional for HTTP if buffering is needed.
+#### 3.1.3 AWS IoT Thing Groups (Device Organization)
+
+Provides hierarchical device management and organization across tenants and sites. Thing Groups enable bulk operations, cost tracking, health monitoring, and logical grouping of devices without requiring database queries.
+
+**Capabilities:**
+
+- **Hierarchical Structure**: Parent-child relationships for tenant → sites → devices organization
+- **Static Groups**: Manually managed groups for organizational structure (tenant-level, site-level)
+- **Dynamic Groups**: Query-based groups that automatically track device states (disconnected, active)
+- **Bulk Operations**: Apply updates, configurations, or queries to all devices in a group
+- **Cost Allocation**: Tag-based cost tracking at tenant and site level
+- **Fleet Indexing**: Search and query devices across groups with AWS IoT Fleet Indexing
+
+**SMDH Thing Group Hierarchy:**
+
+![Thing Group Hierarchy](diagrams/SMDH_Thing_Group_Hierarchy.drawio.png)
+
+*Figure: AWS IoT Thing Groups hierarchy showing tenant → site → device organization with dynamic groups for health monitoring. [Edit diagram: diagrams/SMDH_Thing_Group_Hierarchy.drawio]*
+
+**Why Thing Groups are needed:**
+
+- **Simplified Operations**: Query all devices for a tenant with a single recursive command instead of database queries
+- **Site-Level Management**: Apply firmware updates or configuration changes to all devices at a specific site
+- **Health Monitoring**: Automatically track disconnected or problematic devices via dynamic groups
+- **Organizational Clarity**: Mirror the business structure (tenant → sites → devices) in AWS IoT
+- **Cost Visibility**: Tag thing groups to track IoT costs per tenant and per site
+- **Snowflake Integration**: Sync thing group hierarchy to Snowflake infrastructure tables for unified device management
+
+**Key Operations Enabled:**
+
+```bash
+# List all devices for a tenant (recursive includes all site groups)
+aws iot list-things-in-thing-group \
+  --thing-group-name "smdh-tenant-company_a" \
+  --recursive --region eu-west-2
+
+# List devices at a specific site
+aws iot list-things-in-thing-group \
+  --thing-group-name "smdh-company_a-site_001" \
+  --region eu-west-2
+
+# Check disconnected devices (uses dynamic group)
+aws iot list-things-in-thing-group \
+  --thing-group-name "smdh-company_a-disconnected" \
+  --region eu-west-2
+```
+
+**Traceability:**
+
+- FR-004: Supports multi-tenant device isolation and organization
+- FR-005: Enables efficient device connection state monitoring
+- NFR-001: Scales to support 300+ devices across 30 tenants
+- NFR-005: Reduces operational overhead for device management
+
+#### 3.1.4 OSM Connectivity Architecture
+
+**Device Constraint:**
+
+DevTank OpenSmartMonitor (OSM) devices cannot store or present X.509 client certificates due to hardware limitations. This means they cannot perform mutual TLS authentication directly with AWS IoT Core. However, OSM devices support two connectivity methods:
+
+- **LoRaWAN** (Class A, EU868 band) with DevEUI/AppKey authentication
+- **WiFi** with MQTT username/password authentication (no X.509 support)
+
+Both methods require an intermediate component (gateway or network server) that holds X.509 certificates and authenticates to AWS IoT Core on behalf of the sensors.
+
+**Architecture:**
+
+![LoRaWAN Architecture](diagrams/SMDH_LoRaWAN_Architecture.drawio.png)
+
+*Figure: OSM connectivity options showing two paths to AWS IoT Core—Option A via LoRaWAN gateway with built-in Network Server, Option B via WiFi MQTT to ChirpStack. Both options use X.509 certificate authentication at the gateway/NS level since OSM devices cannot store certificates. [Edit diagram: diagrams/SMDH_LoRaWAN_Architecture.drawio]*
+
+**Key Components:**
+
+1. **DevTank OSM Sensors**
+   - Support both LoRaWAN (Class A, EU868 band) and WiFi connectivity
+   - Generate DevEUI and AppKey for LoRaWAN network authentication
+   - WiFi mode supports MQTT with username/password authentication (NOT X.509)
+   - No X.509 certificate storage capability
+   - Long range, low power operation via LoRaWAN; local connectivity via WiFi
+
+2. **LoRaWAN Gateway (e.g., Milesight UG65)** — Option A
+   - Receives LoRaWAN radio packets from OSM sensors
+   - Stores X.509 certificates for AWS IoT Core authentication
+   - Forwards uplinks via MQTT with TLS mutual authentication
+   - Provides offline message buffering during network outages
+   - Built-in LoRaWAN Network Server capability (simplest option)
+
+3. **ChirpStack Network Server** — Option B
+   - Open-source Network Server for centralised device management
+   - OSM sensors connect via WiFi MQTT (username/password authentication)
+   - ChirpStack bridges to AWS IoT Core using X.509 certificates
+   - Provides central management console for multi-site deployments
+   - Native AWS IoT Core integration
+
+**Benefits of This Architecture:**
+
+| Benefit | Option A (LoRaWAN) | Option B (WiFi/ChirpStack) |
+|---------|-------------------|---------------------------|
+| **Range** | Up to several km | Local WiFi coverage |
+| **Power** | Low (battery-friendly) | Higher (WiFi radio) |
+| **Infrastructure** | Gateway only | ChirpStack server required |
+| **Central Management** | Per-gateway | Centralised |
+| **X.509 Authentication** | Gateway holds certs | ChirpStack holds certs |
+
+**Common benefits across both options:**
+- OSM devices never need to store X.509 certificates
+- Clean multi-tenant isolation via MQTT topic structure
+- Strong security (LoRaWAN AES128 or WiFi WPA2, plus TLS 1.3 to AWS)
+- Industrial reliability
+
+**Traceability:**
+
+- FR-001: Enables sensor connectivity without direct certificate support
+- FR-004: Maintains tenant isolation through gateway authentication
+- NFR-001: Scales to support 5-10 sensors per gateway, multiple gateways per site
+- NFR-002: Gateway buffering provides resilience during network outages
+- NFR-003: End-to-end encryption (LoRaWAN AES128 + TLS 1.3 to AWS)
 
 ### 3.2 IoT Rules Engine
 
@@ -125,7 +265,7 @@ Routes and filters MQTT messages from IoT Core to Kinesis. Implements multi-tena
 **Why it's needed:**
 
 - Extracts tenant context from MQTT topic path
-- Routes messages to correct Kinesis partition per tenant
+- Routes messages to tenant's dedicated Kinesis stream
 - Republishes failures to error topics for investigation
 - Reduces dependency on custom processing code
 
@@ -139,20 +279,30 @@ Routes and filters MQTT messages from IoT Core to Kinesis. Implements multi-tena
 
 **Overview:**
 
-Kinesis streams integrate with Snowflake via the Snowflake Openflow Kinesis Connector (native integration). This is an external system to AWS but critical for the complete data pipeline.
+Kinesis streams integrate with Snowflake via the Snowflake Openflow Kinesis Connector. Each tenant requires their own Openflow connector reading from their dedicated Kinesis stream.
+
+**IMPORTANT: Per-Tenant Connector Architecture**
+
+Openflow connectors have a critical limitation: they cannot filter records from a stream. Each connector consumes ALL records from its configured stream. Therefore:
+
+- Each tenant gets a dedicated Kinesis stream: `smdh-{tenant_id}-stream`
+- Each tenant gets a dedicated Openflow connector
+- Each connector writes to the tenant's isolated database
+- All connectors share a single Openflow Runtime (cost-efficient)
 
 **Integration Requirements:**
 
 - Snowflake account must exist in eu-west-2 (same region as Kinesis)
-- Cross-account IAM role configured in AWS to allow Snowflake to read from Kinesis
-- Openflow connector configured per tenant to route Kinesis streams to Snowflake databases
-- Each tenant gets isolated database: `smdh_tenant_{tenant_id}`
+- Cross-account IAM role with wildcard access to `smdh-*-stream` pattern
+- Openflow Runtime shared across all connectors
+- One Openflow Connector per tenant (created via Snowsight UI)
 
 **Key AWS Configuration for Snowflake Integration:**
 
-1. **IAM Role** for Snowflake Openflow connector
-   - Allows Snowflake to assume role and read Kinesis streams
-   - Restricts access to specific Kinesis streams only
+1. **IAM Role** for Snowflake Openflow
+   - Role: `smdh-snowflake-kinesis-role`
+   - Allows Snowflake to assume role and read from any tenant stream
+   - Policy grants access to: `arn:aws:kinesis:eu-west-2:*:stream/smdh-*-stream`
    - External ID required for security
 
 2. **Secrets Manager Secret**
@@ -160,20 +310,80 @@ Kinesis streams integrate with Snowflake via the Snowflake Openflow Kinesis Conn
    - Used by Snowflake to sign requests to Kinesis
    - Automatic rotation before expiry
 
-3. **Kinesis Stream Naming**
-   - Stream: `smdh-sensor-data-stream`
-   - Partitioned by `{tenant_id}` to route messages to correct tenant database
-   - On-demand capacity scales automatically with message volume
+3. **Kinesis Stream Naming (Per-Tenant)**
+   - Pattern: `smdh-{tenant_id}-stream`
+   - Examples: `smdh-acme_corp-stream`, `smdh-globex-stream`
+   - Each stream created by Terraform tenant module
+   - On-demand capacity scales automatically per tenant
+
+4. **Openflow Connector Configuration (Per-Tenant)**
+
+   | Setting | Value |
+   |---------|-------|
+   | Stream Name | `smdh-{tenant_id}-stream` |
+   | Application Name | `smdh-openflow-{tenant_id}` |
+   | Target Database | `SMDH_TENANT_{TENANT_ID}` |
+   | Target Schema | `RAW` |
+   | Target Table | `SENSOR_READINGS` |
 
 **Traceability**
 
 - FR-002: Real-time data flow from Kinesis to Snowflake
-- FR-004: Tenant isolation enforced via partition keys
-- NFR-002: High availability via multi-AZ Kinesis replication
+- FR-004: Tenant isolation enforced via dedicated streams and connectors
+- NFR-002: High availability via multi-AZ Kinesis replication per tenant
 
-### 3.4 Supporting Services
+### 3.4 Openflow Multi-Connector Architecture
 
-#### 3.4.1 AWS Secrets Manager
+**Why Multiple Connectors?**
+
+Snowflake Openflow Kinesis connectors have no filtering capability. Each connector consumes 100% of records from its configured stream. This architectural constraint requires:
+
+1. **One Kinesis stream per tenant** — Data isolation at the stream level
+2. **One Openflow connector per tenant** — Each connector reads from one stream
+3. **Shared Openflow Runtime** — Single runtime hosts all connectors (cost-efficient)
+
+**Architecture:**
+
+```
+Tenant A: IoT Rule → smdh-acme_corp-stream → Openflow Connector A → SMDH_TENANT_ACME_CORP
+Tenant B: IoT Rule → smdh-globex-stream    → Openflow Connector B → SMDH_TENANT_GLOBEX
+Tenant C: IoT Rule → smdh-initech-stream   → Openflow Connector C → SMDH_TENANT_INITECH
+                                              ↑
+                                    Shared: smdh-kinesis-runtime
+```
+
+**Connector Lifecycle:**
+
+| Event | Action |
+|-------|--------|
+| New tenant onboarded | Create stream (Terraform) + Create connector (Snowsight UI) |
+| Tenant scales up | Kinesis auto-scales (on-demand mode) |
+| Tenant offboarded | Stop connector → Delete stream |
+
+**Monitoring:**
+
+Each connector reports metrics independently:
+- Records processed per connector
+- Lag per tenant stream
+- Errors per tenant
+
+Query connector status:
+```sql
+SELECT * FROM TABLE(INFORMATION_SCHEMA.OPENFLOW_INGESTION_HISTORY())
+WHERE connector_name LIKE 'smdh-openflow-%';
+```
+
+**Why not a single shared stream?**
+
+| Approach | Problem |
+|----------|---------|
+| Single stream, single connector | All tenant data goes to one table—no isolation |
+| Single stream, multiple connectors | Each connector gets ALL records from ALL tenants—wasteful and insecure |
+| **Per-tenant streams (chosen)** | Each connector reads only its tenant's data—correct isolation |
+
+### 3.5 Supporting Services
+
+#### 3.5.1 AWS Secrets Manager
 
 Securely stores and rotates sensitive credentials like Snowflake private keys, API keys, and connection strings.
 
@@ -187,7 +397,7 @@ Securely stores and rotates sensitive credentials like Snowflake private keys, A
 - NFR-003: Secure credential management
 - NFR-005: Automated rotation reduces operational burden
 
-#### 3.4.2 CloudWatch
+#### 3.5.2 CloudWatch
 
 Centralised monitoring and logging for all AWS services. Collects metrics, stores logs, and triggers alarms.
 
@@ -212,50 +422,59 @@ Centralised monitoring and logging for all AWS services. Collects metrics, store
 
 **Scenario:** Manufacturing facility with multiple sensor types sending continuous data
 
+![MQTT Data Flow](diagrams/SMDH_Data_Flow_Paths-MQTT%20Data%20Flow.drawio.png)
+
+*Figure: End-to-end data flow from LoRaWAN sensors through AWS IoT Core to Snowflake. [Edit diagram: diagrams/SMDH_Data_Flow_Paths.drawio]*
+
 **Devices in scope:**
 
-- Milesight UG65 LoRaWAN gateways (collect sensor data via 868 MHz radio)
-- DevTank OpenSmartMonitor (air quality, energy, environment via Wi-Fi MQTT or LoRaWAN)
-- Generic LoRaWAN sensors (temperature, vibration, state monitoring)
+- Milesight UG65 LoRaWAN gateways (authenticated connection to AWS IoT Core)
+- DevTank OpenSmartMonitor (air quality, energy, environment via LoRaWAN to gateway)
+- Generic LoRaWAN sensors (temperature, vibration, state monitoring via gateway)
 
 **End-to-end data flow:**
 
 ```
-1. Sensor Generation
-   └─ Milesight UG65 Gateway or DevTank OSM
-   └─ Frequency: 1 Hz (sensors) to 1 min (air quality)
+1. Sensor Generation (LoRaWAN)
+   └─ DevTank OSM and other LoRaWAN sensors
+   └─ Transmit via LoRaWAN Class A (EU868 band)
+   └─ Frequency: 1 Hz (sensors) to 15 min (air quality)
 
-2. MQTT Publish (TLS 1.3)
-   └─ Milesight UG65 → AWS IoT Core
+2. Gateway Aggregation
+   └─ Milesight UG65 receives LoRaWAN uplinks
+   └─ Built-in Network Server decodes payloads
+   └─ Buffers messages during network outages
+
+3. MQTT Publish (TLS 1.3)
+   └─ Milesight UG65 Gateway → AWS IoT Core
       Topic: smdh/{tenant_id}/sensor-data
-      Authentication: X.509 certificate
-   └─ DevTank OSM → AWS IoT Core (Wi-Fi)
-      Topic: smdh/{tenant_id}/devtank-data
-      Authentication: X.509 certificate
+      Authentication: X.509 certificate (gateway holds cert)
 
-3. IoT Rules Engine Routing
-   └─ SQL: SELECT *, '{tenant_id}' as tenant_id FROM 'smdh/+/+'
-   └─ Validates message structure
-   └─ Routes to Kinesis with tenant partition key
+4. IoT Rules Engine Routing (Per-Tenant Rule)
+   └─ Rule name: smdh_route_{tenant_id}
+   └─ SQL: SELECT *, topic(2) as tenant_id, topic(3) as site_id,
+           timestamp() as iot_timestamp FROM 'smdh/{tenant_id}/+/sensor-data'
+   └─ Routes to tenant's dedicated Kinesis stream
 
-4. Kinesis Buffering & Ordering
-   └─ Partition: {tenant_id}
-   └─ Guarantees: In-order delivery per tenant, 24h retention
-   └─ Throughput: On-demand, auto-scales with message volume
+5. Per-Tenant Kinesis Stream
+   └─ Stream: smdh-{tenant_id}-stream
+   └─ Partition key: {site_id} (ordering within tenant)
+   └─ Guarantees: In-order delivery per site, 24h retention
+   └─ Throughput: On-demand, auto-scales per tenant
 
-5. Snowflake Openflow Integration
-   └─ Native Kinesis connector (preview feature)
-   └─ Reads from Kinesis stream
+6. Snowflake Openflow Connector (Per-Tenant)
+   └─ Each tenant has dedicated connector
+   └─ Reads from tenant's stream only (no filtering needed)
    └─ Writes to smdh_tenant_{tenant_id}.raw.sensor_readings
    └─ Latency: 5-15 seconds end-to-end
 
-6. Snowflake Processing
+7. Snowflake Processing
    └─ Streams detect new data in raw tables
    └─ Tasks normalize and transform (Python/SQL)
    └─ Dynamic Tables aggregate to business metrics
    └─ Cortex ML detects anomalies
 
-7. Analytics & Visualization
+8. Analytics & Visualization
    └─ Power BI: DirectQuery for real-time dashboards
    └─ Streamlit: Native portal within Snowflake
    └─ Users see data within 1-2 minutes of sensor reading
@@ -263,11 +482,12 @@ Centralised monitoring and logging for all AWS services. Collects metrics, store
 
 **Why this architecture:**
 
-- All sensors are MQTT-native (gateways and devices)
-- Persistent connections handle continuous 1 Hz streams
-- X.509 certificates provide strong device authentication
-- Topic-based routing inherently multi-tenant
-- Kinesis provides buffering without custom code
+- LoRaWAN provides long-range, low-power sensor connectivity
+- Gateways handle all X.509 authentication (sensors cannot store certs)
+- Persistent gateway connections handle continuous sensor streams
+- Per-tenant IoT Rules route to dedicated Kinesis streams
+- Per-tenant Kinesis streams enable Openflow data isolation
+- Per-tenant Openflow connectors write to isolated databases
 - No Lambda/validation layers = lower latency and cost
 
 ---
@@ -279,9 +499,11 @@ Centralised monitoring and logging for all AWS services. Collects metrics, store
 | Layer                 | Isolation Method                              | Rationale                                          |
 | --------------------- | --------------------------------------------- | -------------------------------------------------- |
 | **Device Level**      | Separate X.509 certificates per gateway       | Prevents device spoofing, enables revocation       |
+| **Thing Group Level** | Hierarchical thing groups per tenant/site     | Organizational isolation, bulk operations per tenant |
 | **Topic Level**       | Topic ACLs enforce `smdh/{tenant_id}/*` path  | Prevents cross-tenant topic access at IoT Core    |
-| **Rules Level**       | IoT Rules extract tenant from topic            | Validates tenant context before Kinesis routing    |
-| **Partition Level**   | Kinesis partitioned by {tenant_id}             | In-order delivery, isolation per tenant            |
+| **Rules Level**       | Per-tenant IoT Rule routes to dedicated stream | Each tenant's data goes to their own Kinesis stream |
+| **Stream Level**      | Dedicated Kinesis stream per tenant            | Complete physical isolation, independent scaling   |
+| **Connector Level**   | Per-tenant Openflow connector                  | Each connector reads only its tenant's stream      |
 | **Database Level**    | Separate database per tenant in Snowflake      | Complete storage isolation                         |
 | **Application Level** | Role-based access control in Snowflake         | Users only see their tenant's data                 |
 
@@ -339,16 +561,9 @@ Centralised monitoring and logging for all AWS services. Collects metrics, store
 
 The SMDH platform operates in a single production AWS account in `eu-west-2` (London region).
 
-```
-AWS Account: 123456789012 (smdh-production)
-├─ Region: eu-west-2 (London) - Primary
-├─ Services:
-│  ├─ AWS IoT Core (Global via regional endpoint)
-│  ├─ Kinesis Data Streams (Regional)
-│  ├─ Secrets Manager (Regional)
-│  └─ CloudWatch (Regional)
-└─ High Availability: Multi-AZ within region
-```
+![AWS IoT Core Architecture](diagrams/SMDH_IoT_Core_Architecture.drawio.png)
+
+*Figure: SMDH single-account AWS architecture in eu-west-2 showing managed services (IoT Core, Kinesis, CloudWatch) with Snowflake integration. [Edit diagram: diagrams/SMDH_IoT_Core_Architecture.drawio]*
 
 **Rationale:**
 
@@ -361,63 +576,9 @@ AWS Account: 123456789012 (smdh-production)
 
 **VPC Design Principle:** IoT devices are internet-connected; AWS services are either fully managed (serverless) or connect via managed endpoints.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│ AWS Account (eu-west-2)                                 │
-├─────────────────────────────────────────────────────────┤
-│                                                          │
-│  ┌────────────────────────────────────────────────────┐ │
-│  │ AWS IoT Core (Fully Managed - Public Endpoint)     │ │
-│  ├────────────────────────────────────────────────────┤ │
-│  │ - Regional endpoint: *.iot.eu-west-2.amazonaws.com │ │
-│  │ - No VPC required (managed service)                │ │
-│  │ - TLS 1.2/1.3 encryption in transit                │ │
-│  │ - Multi-AZ redundancy built-in                     │ │
-│  └────────────────────────────────────────────────────┘ │
-│                         ↓                                │
-│  ┌────────────────────────────────────────────────────┐ │
-│  │ IoT Rules Engine (Managed)                         │ │
-│  │ Routes MQTT → Kinesis with tenant context          │ │
-│  └────────────────────────────────────────────────────┘ │
-│                         ↓                                │
-│  ┌────────────────────────────────────────────────────┐ │
-│  │ Kinesis Data Streams (Fully Managed)               │ │
-│  ├────────────────────────────────────────────────────┤ │
-│  │ - Multi-AZ by default                             │ │
-│  │ - No VPC configuration needed                      │ │
-│  │ - Accessed via AWS API (no IP addresses)           │ │
-│  └────────────────────────────────────────────────────┘ │
-│                         ↓                                │
-│  ┌────────────────────────────────────────────────────┐ │
-│  │ Snowflake Openflow Connector                       │ │
-│  │ (Runs within Snowflake account, not in AWS VPC)    │ │
-│  │ Reads from Kinesis via IAM role cross-account      │ │
-│  └────────────────────────────────────────────────────┘ │
-│                                                          │
-│  ┌────────────────────────────────────────────────────┐ │
-│  │ Secrets Manager (Fully Managed)                    │ │
-│  ├────────────────────────────────────────────────────┤ │
-│  │ - Stores Snowflake private key                     │ │
-│  │ - No VPC needed (managed service)                  │ │
-│  │ - Accessed via AWS API                             │ │
-│  └────────────────────────────────────────────────────┘ │
-│                                                          │
-│  ┌────────────────────────────────────────────────────┐ │
-│  │ CloudWatch (Fully Managed)                         │ │
-│  ├────────────────────────────────────────────────────┤ │
-│  │ - Metrics from IoT Core, Kinesis, Rules Engine     │ │
-│  │ - Logs from all AWS services                       │ │
-│  │ - No VPC needed (managed service)                  │ │
-│  └────────────────────────────────────────────────────┘ │
-│                                                          │
-└─────────────────────────────────────────────────────────┘
+![VPC Configuration](diagrams/SMDH_VPC_Configuration.drawio.png)
 
-External Connections:
-├─ Internet (Gateways/Devices) → AWS IoT Core (Public)
-│  └─ TLS 1.3, port 8883 (MQTT)
-└─ Snowflake (Cross-Account) → Kinesis via IAM Role
-   └─ Service-to-service, no internet
-```
+*Figure: Network connectivity showing LoRaWAN gateways connecting to AWS IoT Core over TLS 1.3 (port 8883), with internal routing through IoT Rules Engine to Kinesis and Snowflake Openflow Connector. [Edit diagram: diagrams/SMDH_VPC_Configuration.drawio]*
 
 ### 7.3 No VPC Required
 
@@ -556,6 +717,8 @@ All SMDH AWS components are **fully managed services** that don't require VPC ho
 | Metric                    | Source         | Target    | Threshold                |
 | ------------------------- | -------------- | --------- | ------------------------ |
 | **IoT Connections**       | CloudWatch     | Dashboard | Track active gateways     |
+| **Thing Group Device Count** | AWS IoT     | Dashboard | Track devices per tenant/site |
+| **Disconnected Devices**  | Dynamic Thing Group | Alarm | >0 devices in disconnected group |
 | **MQTT Messages**         | CloudWatch     | Dashboard | Should be ~86K/sec peak   |
 | **Message Processing**    | CloudWatch     | Dashboard | <100ms latency           |
 | **Connection Errors**     | CloudWatch     | Alarm     | >5 failures in 5 min     |
@@ -575,8 +738,17 @@ All SMDH AWS components are **fully managed services** that don't require VPC ho
 
 - **CloudWatch Dashboards**: Real-time AWS metrics
 - **CloudWatch Alarms**: SNS notifications for issues
+- **Thing Group Queries**: Regular polling of dynamic groups for disconnected devices
+  ```bash
+  # Check disconnected devices for all tenants
+  for tenant in company_a company_b company_c; do
+    aws iot list-things-in-thing-group \
+      --thing-group-name "smdh-${tenant}-disconnected" \
+      --region eu-west-2
+  done
+  ```
 - **Snowflake System Views**: Query ingestion_metrics
-- **Automated Reports**: Daily health check summaries
+- **Automated Reports**: Daily health check summaries leveraging thing group data
 
 ### 10.2 Alerting Strategy
 
@@ -648,10 +820,13 @@ The architecture supports future changes through:
 | -------------------------- | ------------------------ | ---------------------- | ---------------------------------------------- |
 | **MQTT Broker**            | AWS IoT Core             | EMQ X, Mosquitto       | Fully managed, scales to millions, native AWS  |
 | **Stream Processing**      | Kinesis (on-demand)      | Kafka/MSK, SQS         | Native integration, no cluster management      |
+| **Kinesis Architecture**   | Per-tenant streams       | Shared stream + partitions | Openflow cannot filter; per-tenant streams required for isolation |
 | **Data Warehouse**         | Snowflake                | Redshift, BigQuery     | Superior semi-structured data handling         |
 | **Web Framework**          | Streamlit in Snowflake   | React + ECS            | Faster development, no separate infrastructure |
 | **Multi-tenancy**          | Database-per-tenant      | Row-level security     | Stronger isolation, simpler operations         |
 | **Device Authentication**  | X.509 certificates       | Pre-shared keys        | Can be revoked, non-repudiation                |
+| **Sensor Connectivity**    | LoRaWAN via gateways     | Direct Wi-Fi MQTT      | OSM cannot store X.509 certs; gateways handle auth |
+| **Device Organization**    | AWS IoT Thing Groups     | Custom database tables | Native AWS feature, enables bulk operations, automatic hierarchy |
 | **Network Design**         | No VPC (managed only)    | Custom VPC             | Simpler, IoT needs internet-facing endpoint    |
 | **Regional Deployment**    | Single region (eu-west-2) | Multi-region          | Cost-effective, compliance, gateway proximity  |
 
@@ -711,7 +886,40 @@ API Key: smdh-prod-company-a-{random}
 
 #### Phase 2: AWS IoT Configuration (for MQTT devices)
 
-**Step 2.1: Create IoT Thing Registry**
+**Step 2.1: Create Thing Groups Hierarchy**
+
+```
+Component: AWS IoT Thing Groups
+Purpose: Organize devices hierarchically for management and monitoring
+
+Create tenant-level thing group:
+- Name: smdh-tenant-company_a
+- Description: "All IoT devices for tenant: Company A Manufacturing Ltd"
+- Attributes:
+  - tenant_id: company_a
+  - tenant_name: Company_A_Manufacturing_Ltd
+  - managed_by: terraform
+
+Create site-level thing groups (one per site):
+- Name: smdh-company_a-site_001
+- Parent: smdh-tenant-company_a
+- Description: "IoT devices at Company A - site_001"
+- Attributes:
+  - tenant_id: company_a
+  - site_id: site_001
+  - managed_by: terraform
+
+Create dynamic thing groups (auto-tracking):
+- Name: smdh-company_a-disconnected
+- Query: attributes.tenant_id:company_a AND connectivity.connected:false
+- Purpose: Automatically track disconnected devices for alerting
+
+- Name: smdh-company_a-active
+- Query: attributes.tenant_id:company_a AND connectivity.connected:true AND connectivity.timestamp > ${timestamp - 300000}
+- Purpose: Track recently active devices for health monitoring
+```
+
+**Step 2.2: Create IoT Thing Registry**
 
 ```
 Component: AWS IoT Core
@@ -720,6 +928,7 @@ Purpose: Register tenant's gateways and devices
 For each gateway:
 - Thing Name: smdh-gateway-company-a-site-001
 - Thing Type: LoRaWANGateway
+- Thing Groups: Add to smdh-company_a-site_001 (automatic parent inheritance)
 - Attributes:
   - tenant_id: company_a
   - site_id: site-001
@@ -727,7 +936,7 @@ For each gateway:
   - deployment_date: "2024-11-13"
 ```
 
-**Step 2.2: Generate X.509 Certificates**
+**Step 2.3: Generate X.509 Certificates**
 
 ```
 Component: AWS IoT Core Certificates
@@ -741,7 +950,7 @@ Per gateway certificate:
 - Auto-rotation reminder: 30 days before expiry
 ```
 
-**Step 2.3: Create IoT Policy**
+**Step 2.4: Create IoT Policy**
 
 ```
 Component: AWS IoT Policies
@@ -757,19 +966,58 @@ Permissions:
 Critical: No cross-tenant topic access
 ```
 
-**Step 2.4: Configure IoT Rules**
+**Step 2.5: Configure IoT Rules**
 
 ```
 Component: AWS IoT Rules Engine
-Purpose: Route tenant data to correct stream
+Purpose: Route tenant data to tenant's dedicated Kinesis stream
 
 Rule Name: smdh_route_company_a
-SQL: SELECT *, 'company_a' as tenant_id
-     FROM 'smdh/company_a/+'
+SQL: SELECT *,
+     'company_a' as tenant_id,
+     topic(3) as site_id,
+     timestamp() as iot_timestamp
+     FROM 'smdh/company_a/+/sensor-data'
      WHERE timestamp IS NOT NULL
 Action:
-- Kinesis: Put to partition key 'company_a'
+- Kinesis: Put to stream 'smdh-company_a-stream'
+- Partition Key: ${topic(3)} (site_id for ordering within tenant)
 - Error Action: Republish to smdh/company_a/errors
+
+Note: Each tenant gets a dedicated Kinesis stream because Openflow
+connectors cannot filter records from a shared stream.
+```
+
+**Step 2.6: Verify Thing Group Configuration**
+
+```
+Component: AWS IoT Thing Groups
+Purpose: Validate hierarchy and device memberships
+
+Verification commands:
+# View thing group hierarchy
+aws iot describe-thing-group --thing-group-name smdh-tenant-company_a
+
+# List all devices for tenant (recursive)
+aws iot list-things-in-thing-group \
+  --thing-group-name smdh-tenant-company_a \
+  --recursive --region eu-west-2
+
+# List devices at specific site
+aws iot list-things-in-thing-group \
+  --thing-group-name smdh-company_a-site_001 \
+  --region eu-west-2
+
+# Check dynamic group for disconnected devices (should be empty initially)
+aws iot list-things-in-thing-group \
+  --thing-group-name smdh-company_a-disconnected \
+  --region eu-west-2
+
+Expected Results:
+- Tenant group contains all site groups as children
+- Site groups contain only devices for that site
+- Devices automatically inherit tenant group membership
+- Dynamic groups are empty until devices connect/disconnect
 ```
 
 #### Phase 3: Snowflake Configuration
@@ -821,7 +1069,51 @@ CREATE TABLE smdh_tenant_company_a.raw.uploaded_files (...);
 CREATE TABLE smdh_tenant_company_a.raw.api_events (...);
 ```
 
-**Step 3.3: Setup Streaming Objects**
+**Step 3.3: Sync AWS IoT Metadata to Snowflake Infrastructure**
+
+```sql
+Component: Snowflake Infrastructure Schema (smdh_infrastructure.tenant_configs)
+Purpose: Mirror AWS IoT Thing Group hierarchy for unified device management
+
+-- This is done in the central infrastructure database, not per-tenant
+
+-- Update tenant record with thing group information
+UPDATE smdh_infrastructure.tenant_configs.tenants
+SET
+  tenant_thing_group_name = 'smdh-tenant-company_a',
+  tenant_thing_group_arn = 'arn:aws:iot:eu-west-2:123456789012:thinggroup/smdh-tenant-company_a',
+  last_sync_timestamp = CURRENT_TIMESTAMP()
+WHERE tenant_id = 'company_a';
+
+-- Add site thing group information
+UPDATE smdh_infrastructure.tenant_configs.sites
+SET
+  site_thing_group_name = 'smdh-company_a-site_001',
+  site_thing_group_arn = 'arn:aws:iot:eu-west-2:123456789012:thinggroup/smdh-company_a-site_001',
+  last_device_sync = CURRENT_TIMESTAMP()
+WHERE tenant_id = 'company_a' AND site_id = 'site_001';
+
+-- Add device thing group memberships
+UPDATE smdh_infrastructure.tenant_configs.devices
+SET
+  site_thing_group_name = 'smdh-company_a-site_001',
+  tenant_thing_group_name = 'smdh-tenant-company_a',
+  thing_group_memberships = ARRAY_CONSTRUCT('smdh-company_a-site_001', 'smdh-tenant-company_a'),
+  last_sync_timestamp = CURRENT_TIMESTAMP()
+WHERE device_id = 'smdh-gateway-company-a-site-001-gw-001';
+
+-- Verify thing group hierarchy view
+SELECT * FROM smdh_infrastructure.monitoring.v_thing_group_hierarchy
+WHERE tenant_id = 'company_a';
+
+Benefits of this sync:
+- Unified view of AWS IoT device hierarchy in Snowflake
+- Enable SQL queries across device organization
+- Support for analytics on device groups (e.g., "average uptime per site")
+- Integration point for monitoring and alerting dashboards
+```
+
+**Step 3.4: Setup Streaming Objects**
 
 ```sql
 Component: Snowflake Streams & Tasks
@@ -845,7 +1137,7 @@ AS
 ALTER TASK process_sensor_data RESUME;
 ```
 
-**Step 3.4: Create Roles and Users**
+**Step 3.5: Create Roles and Users**
 
 ```sql
 Component: Snowflake RBAC
@@ -875,7 +1167,7 @@ CREATE USER john_smith_company_a
 GRANT ROLE tenant_company_a_user TO USER john_smith_company_a;
 ```
 
-**Step 3.5: Configure Dynamic Tables**
+**Step 3.6: Configure Dynamic Tables**
 
 ```sql
 Component: Snowflake Dynamic Tables
@@ -892,6 +1184,46 @@ SELECT
   COUNT(*) as reading_count
 FROM smdh_tenant_company_a.normalized.sensor_metrics
 GROUP BY machine_id, hour;
+```
+
+**Step 3.7: Configure Openflow Kinesis Connector**
+
+```
+Component: Snowflake Openflow
+Purpose: Stream data from tenant's Kinesis stream to Snowflake
+
+IMPORTANT: Each tenant requires a dedicated Openflow connector because
+Openflow cannot filter records from a shared stream.
+
+Prerequisites:
+- Openflow Runtime exists (smdh-kinesis-runtime) - created once
+- IAM role allows Snowflake to read from smdh-*-stream pattern
+- Tenant database and RAW.SENSOR_READINGS table exist
+
+Create connector in Snowsight UI:
+1. Navigate to Data > Add Data > Ingest from Kinesis Stream
+2. Runtime: Select 'smdh-kinesis-runtime'
+3. Connection: Use existing 'smdh-kinesis-connection'
+4. Stream Name: smdh-company_a-stream
+5. Application Name: smdh-openflow-company_a
+6. Target Database: SMDH_TENANT_COMPANY_A
+7. Target Schema: RAW
+8. Target Table: SENSOR_READINGS
+9. Start Position: LATEST (or TRIM_HORIZON for replay)
+
+Verify connector status:
+SELECT * FROM TABLE(INFORMATION_SCHEMA.OPENFLOW_INGESTION_HISTORY())
+WHERE connector_name = 'smdh-openflow-company_a'
+ORDER BY start_time DESC;
+
+Monitor lag:
+SELECT
+  connector_name,
+  records_processed,
+  bytes_processed,
+  current_lag_seconds
+FROM TABLE(INFORMATION_SCHEMA.OPENFLOW_CONNECTOR_STATUS())
+WHERE connector_name = 'smdh-openflow-company_a';
 ```
 
 #### Phase 4: Streamlit Portal Configuration
@@ -990,17 +1322,26 @@ Configuration:
 - Offline Buffer: 10,000 messages (store-and-forward)
 ```
 
-**Step 6.2: DevTank OSM Setup (Wi-Fi MQTT)**
+**Step 6.2: Register LoRaWAN Sensors with Gateway**
 
 ```
-Configuration:
-- Server: {iot-endpoint}.iot.eu-west-2.amazonaws.com
-- Port: 8883 (MQTT with TLS)
-- Wi-Fi Network: Company A production network
-- Certificate: Upload company-a-osm-cert.pem
-- Topic: smdh/company_a/devtank-data
-- QoS: 1
-- Frequency: 1-15 minute intervals (configurable)
+Component: Milesight UG65 Network Server
+Purpose: Register DevTank OSM and other LoRaWAN sensors
+
+For each DevTank OSM sensor:
+- DevEUI: Obtained from device label (e.g., A84041XXXXXXXX)
+- AppKey: Obtained from DevTank device documentation
+- Activation: OTAA (Over-The-Air Activation)
+- Device Profile: Class A
+- Payload Decoder: DevTank JavaScript decoder (provided by DevTank)
+
+Network Server Configuration:
+- Mode: Built-in NS (Milesight UG65) or external (TTN/ChirpStack)
+- Application Output: MQTT to AWS IoT Core endpoint
+- Topic Mapping: smdh/{tenant_id}/sensor-data
+
+Note: OSM devices do NOT connect directly to AWS IoT Core.
+The gateway aggregates all LoRaWAN uplinks and publishes via MQTT.
 ```
 
 ### 13.4 Validation Tests
@@ -1010,10 +1351,13 @@ Configuration:
 | Test                      | Description                                 | Expected Result                         |
 | ------------------------- | ------------------------------------------- | --------------------------------------- |
 | **MQTT Connection**       | Gateway connects to IoT Core with X.509     | Connection successful, no auth errors   |
+| **Thing Group Hierarchy** | Query tenant thing group recursively        | Returns all devices across all sites    |
+| **Site Thing Group**      | Query site thing group                      | Returns only devices for that site      |
+| **Dynamic Group**         | Check disconnected devices dynamic group    | Empty initially, updates when device disconnects |
 | **Message Ingestion**     | Send test message from gateway              | Message appears in Snowflake within 30s |
 | **Tenant Topic ACLs**     | Try to publish to another tenant's topic    | Access denied (403 error)               |
-| **DevTank Wi-Fi**         | Connect DevTank OSM via Wi-Fi               | Connects, sends data to IoT Core        |
-| **Data Routing**          | Verify data in correct Kinesis partition    | Partition key matches tenant_id         |
+| **LoRaWAN Sensor Join**   | Register DevTank OSM with gateway NS        | OTAA join succeeds, uplinks received    |
+| **Data Routing**          | Verify data in tenant's Kinesis stream      | Data in smdh-{tenant_id}-stream         |
 | **User Access**           | Login to Streamlit portal with SSO          | Only see company_a data                 |
 | **Certificate Rotation**  | Trigger cert rotation via Secrets Manager   | New cert deployed, old connections drop |
 | **Monitoring**            | Generate IoT error (bad topic)              | Alert received via SNS within 5 min     |
@@ -1032,7 +1376,35 @@ SNOWFLAKE_ACCOUNT="your-account"
 
 echo "Starting tenant onboarding for $TENANT_ID..."
 
-# 1. AWS IoT Setup
+# 1. Create Thing Group Hierarchy
+echo "Creating thing group hierarchy..."
+
+# Tenant-level thing group
+aws iot create-thing-group \
+  --thing-group-name "smdh-tenant-${TENANT_ID}" \
+  --thing-group-properties "attributePayload={attributes={tenant_id=${TENANT_ID},managed_by=terraform}}" \
+  --region $AWS_REGION
+
+# Site-level thing group (assuming site_001)
+aws iot create-thing-group \
+  --thing-group-name "smdh-${TENANT_ID}-site_001" \
+  --parent-group-name "smdh-tenant-${TENANT_ID}" \
+  --thing-group-properties "attributePayload={attributes={tenant_id=${TENANT_ID},site_id=site_001,managed_by=terraform}}" \
+  --region $AWS_REGION
+
+# Dynamic thing group for disconnected devices
+aws iot create-dynamic-thing-group \
+  --thing-group-name "smdh-${TENANT_ID}-disconnected" \
+  --query-string "attributes.tenant_id:${TENANT_ID} AND connectivity.connected:false" \
+  --region $AWS_REGION
+
+# Dynamic thing group for active devices
+aws iot create-dynamic-thing-group \
+  --thing-group-name "smdh-${TENANT_ID}-active" \
+  --query-string "attributes.tenant_id:${TENANT_ID} AND connectivity.connected:true" \
+  --region $AWS_REGION
+
+# 2. AWS IoT Setup
 echo "Creating IoT resources..."
 aws iot create-thing-type --thing-type-name "LoRaWANGateway" --region $AWS_REGION
 aws iot create-thing --thing-name "smdh-gateway-${TENANT_ID}-site-001" \
@@ -1040,13 +1412,19 @@ aws iot create-thing --thing-name "smdh-gateway-${TENANT_ID}-site-001" \
   --attribute-payload "{\"tenant_id\":\"${TENANT_ID}\"}" \
   --region $AWS_REGION
 
-# 2. Generate certificates
+# Add thing to site thing group
+aws iot add-thing-to-thing-group \
+  --thing-name "smdh-gateway-${TENANT_ID}-site-001" \
+  --thing-group-name "smdh-${TENANT_ID}-site_001" \
+  --region $AWS_REGION
+
+# 3. Generate certificates
 CERT_ARN=$(aws iot create-keys-and-certificate --set-as-active \
   --certificate-pem-outfile ${TENANT_ID}-cert.pem \
   --private-key-outfile ${TENANT_ID}-private.key \
   --query 'certificateArn' --output text --region $AWS_REGION)
 
-# 3. Create and attach policy
+# 4. Create and attach policy
 aws iot create-policy --policy-name "smdh-policy-${TENANT_ID}" \
   --policy-document file://templates/iot-policy-template.json \
   --region $AWS_REGION
@@ -1054,12 +1432,29 @@ aws iot create-policy --policy-name "smdh-policy-${TENANT_ID}" \
 aws iot attach-policy --policy-name "smdh-policy-${TENANT_ID}" \
   --target $CERT_ARN --region $AWS_REGION
 
-# 4. Snowflake setup (via SnowSQL)
+# 5. Snowflake setup (via SnowSQL)
 snowsql -a $SNOWFLAKE_ACCOUNT -u admin_user -f templates/create_tenant_database.sql \
   --variable tenant_id=$TENANT_ID \
   --variable tenant_name="$TENANT_NAME"
 
+# 6. Sync thing group metadata to Snowflake
+echo "Syncing AWS IoT metadata to Snowflake..."
+TENANT_THING_GROUP_ARN=$(aws iot describe-thing-group \
+  --thing-group-name "smdh-tenant-${TENANT_ID}" \
+  --query 'thingGroupArn' --output text --region $AWS_REGION)
+
+snowsql -a $SNOWFLAKE_ACCOUNT -u admin_user -q "
+UPDATE smdh_infrastructure.tenant_configs.tenants
+SET tenant_thing_group_name = 'smdh-tenant-${TENANT_ID}',
+    tenant_thing_group_arn = '${TENANT_THING_GROUP_ARN}',
+    last_sync_timestamp = CURRENT_TIMESTAMP()
+WHERE tenant_id = '${TENANT_ID}';"
+
 echo "Tenant onboarding complete for $TENANT_ID"
+echo ""
+echo "Verification commands:"
+echo "  aws iot list-things-in-thing-group --thing-group-name smdh-tenant-${TENANT_ID} --recursive --region ${AWS_REGION}"
+echo "  aws iot describe-thing-group --thing-group-name smdh-tenant-${TENANT_ID} --region ${AWS_REGION}"
 ```
 
 ### 13.6 Rollback Procedures
@@ -1116,12 +1511,21 @@ The SMDH AWS architecture achieves simplicity through focus:
 - **Single Protocol**: MQTT native for all sensor data (no HTTP conversion)
 - **Managed Services**: IoT Core, Kinesis, CloudWatch eliminate ops overhead
 - **Clear Isolation**: Multi-layer tenant isolation from device to database
-- **Operational Focus**: Comprehensive monitoring, alerting, and certificate management
+- **Hierarchical Organization**: AWS IoT Thing Groups mirror business structure (tenant → sites → devices)
+- **Operational Excellence**: Comprehensive monitoring, alerting, certificate management, and bulk device operations
 - **Cost Effective**: Serverless on-demand pricing, no idle resources
 
 By standardizing on MQTT and using AWS managed services, we eliminate custom validation layers, reduce latency, and minimize operational complexity. The architecture is designed to scale smoothly as tenant count grows from 5 to 30+ customers.
 
-The AWS layer is intentionally minimal and focused—just four core services (IoT Core, Kinesis, Secrets Manager, CloudWatch) orchestrate all sensor data ingestion. Snowflake handles all data processing, analytics, and user-facing applications.
+The AWS layer is intentionally minimal and focused—just four core services (IoT Core, Kinesis, Secrets Manager, CloudWatch) orchestrate all sensor data ingestion. AWS IoT Thing Groups provide native device organization that eliminates the need for custom management layers. Snowflake handles all data processing, analytics, and user-facing applications, with infrastructure tables mirroring the AWS IoT hierarchy for unified device management.
+
+**Key Benefits of Thing Groups Integration:**
+
+- **Simplified Operations**: Query all devices for a tenant with a single recursive AWS CLI command
+- **Site-Level Management**: Apply firmware updates or configuration changes to entire sites
+- **Automated Health Tracking**: Dynamic groups automatically identify disconnected or active devices
+- **Unified View**: Snowflake infrastructure tables mirror AWS Thing Group hierarchy for cross-platform queries
+- **Cost Visibility**: Thing group tags enable per-tenant and per-site cost tracking
 
 ---
 
@@ -1130,6 +1534,8 @@ The AWS layer is intentionally minimal and focused—just four core services (Io
 | Business Requirement        | Technical Component        | AWS Service           | Status      |
 | --------------------------- | -------------------------- | --------------------- | ----------- |
 | Receive MQTT sensor data    | MQTT broker + Rules Engine | IoT Core + IoT Rules  | **Active**  |
+| Organize devices by tenant/site | Hierarchical device groups | IoT Thing Groups | **Active** |
+| Track device health         | Dynamic device queries     | Dynamic Thing Groups  | **Active**  |
 | Buffer streaming data       | Message queue              | Kinesis               | **Active**  |
 | Store sensor data           | Data warehouse             | Snowflake (external)  | **Active**  |
 | Upload files                | Web portal                 | Streamlit (Snowflake) | **Active**  |
@@ -1156,6 +1562,8 @@ The AWS layer is intentionally minimal and focused—just four core services (Io
 | ------------------ | ---------------------------------------------------------------- |
 | **MQTT**           | Message Queuing Telemetry Transport - IoT communication protocol |
 | **LoRaWAN**        | Long Range Wide Area Network - IoT radio protocol                |
+| **Thing Groups**   | AWS IoT feature for hierarchical device organization and management |
+| **Dynamic Thing Groups** | AWS IoT query-based groups that auto-update based on device attributes |
 | **JWT**            | JSON Web Token - Authentication token format                     |
 | **CDC**            | Change Data Capture - Tracking data modifications                |
 | **VARIANT**        | Snowflake data type for semi-structured data                     |
@@ -1164,3 +1572,146 @@ The AWS layer is intentionally minimal and focused—just four core services (Io
 | **X.509**          | Standard for public key certificates                             |
 | **SAML**           | Security Assertion Markup Language - SSO protocol                |
 | **IaC**            | Infrastructure as Code - Managing infrastructure through code    |
+
+## Appendix D: Recommended LoRaWAN Network Server Options
+
+### D.1 Overview
+
+DevTank OSM devices cannot store X.509 certificates and therefore cannot authenticate directly to AWS IoT Core. A LoRaWAN Network Server is required to bridge the gap between LoRaWAN sensors and AWS IoT Core's MQTT interface.
+
+**Key Requirement:** The Network Server must be able to publish to AWS IoT Core using X.509 certificate-based mutual TLS authentication.
+
+### D.2 Recommended Options
+
+SMDH supports two Network Server configurations, both of which provide native AWS IoT Core integration:
+
+| Option | Description | Best For |
+|--------|-------------|----------|
+| **Milesight UG65 Built-in NS** | Gateway with integrated Network Server | Single-site deployments, simplest setup |
+| **ChirpStack** | Open-source Network Server | Multi-site deployments, central management |
+
+### D.3 Option 1: Milesight UG65 Built-in Network Server (Recommended for Simplicity)
+
+The Milesight UG65 gateway includes a built-in LoRaWAN Network Server, eliminating the need for external infrastructure.
+
+**Architecture:**
+
+![Milesight UG65 Built-in NS Architecture](diagrams/SMDH_Network_Server_Options-Milesight%20UG65%20Built-in%20NS.drawio.png)
+
+*Figure: Milesight UG65 gateway with built-in Network Server—simplest deployment option with gateway handling LoRaWAN reception, payload decoding, and MQTT publishing to AWS IoT Core with X.509 authentication. [Edit diagram: diagrams/SMDH_Network_Server_Options.drawio - Page 1]*
+
+**Capabilities:**
+
+- Receives LoRaWAN uplinks from DevTank OSM and other Class A devices
+- Performs OTAA join-accept and session key management
+- Decodes payloads using JavaScript decoder (DevTank-provided)
+- Publishes decoded JSON directly to AWS IoT Core via MQTT
+- Stores X.509 certificates for AWS IoT Core authentication
+- Buffers messages during network outages (store-and-forward)
+
+**Configuration Summary:**
+
+1. Register DevTank OSM devices with DevEUI and AppKey
+2. Configure JavaScript payload decoder
+3. Set MQTT output to AWS IoT Core endpoint
+4. Upload X.509 certificate and private key
+5. Configure topic mapping: `smdh/{tenant_id}/sensor-data`
+
+**Advantages:**
+
+- No external Network Server infrastructure required
+- Single device handles gateway + NS + AWS integration
+- Lower operational complexity
+- Suitable for 5-10 sensors per site
+
+**Limitations:**
+
+- Each gateway manages its own devices (no central view)
+- Configuration must be replicated across multiple gateways
+- Less suitable for large-scale multi-site deployments
+
+### D.4 Option 2: ChirpStack (Recommended for Scale)
+
+ChirpStack is an open-source LoRaWAN Network Server with native AWS IoT Core integration.
+
+**Architecture:**
+
+![ChirpStack Architecture](diagrams/SMDH_Network_Server_Options-ChirpStack%20Network%20Server.drawio.png)
+
+*Figure: ChirpStack centralised Network Server—recommended for multi-site deployments with central device management, unified configuration, and native AWS IoT Core integration via X.509 certificates. [Edit diagram: diagrams/SMDH_Network_Server_Options.drawio - Page 2]*
+
+**Capabilities:**
+
+- Centralised device management across multiple gateways
+- Native AWS IoT Core integration with X.509 authentication
+- Web-based administration console
+- Device profiles and payload decoders
+- Multi-tenant application support
+- API for automation and integration
+
+**AWS IoT Core Integration:**
+
+ChirpStack provides a built-in AWS IoT Core integration that:
+
+1. Creates/updates AWS IoT Things automatically
+2. Publishes uplink data to configured MQTT topics
+3. Authenticates using X.509 certificates
+4. Supports per-application topic configuration
+
+**Configuration Summary:**
+
+1. Deploy ChirpStack (self-hosted or managed)
+2. Configure Milesight UG65 as packet forwarder to ChirpStack
+3. Create application for SMDH tenant
+4. Register DevTank OSM devices with DevEUI and AppKey
+5. Configure JavaScript payload decoder
+6. Enable AWS IoT Core integration:
+   - AWS Region: `eu-west-2`
+   - IoT Core Endpoint: `{account}-ats.iot.eu-west-2.amazonaws.com`
+   - Upload X.509 certificate and private key
+   - Topic template: `smdh/{tenant_id}/sensor-data`
+
+**Advantages:**
+
+- Centralised management of all devices and gateways
+- Single configuration point for payload decoders
+- Better visibility across multi-site deployments
+- Suitable for 30+ tenants with multiple sites each
+- Active open-source community
+
+**Limitations:**
+
+- Requires additional infrastructure (VM or container)
+- More complex initial setup
+- Operational overhead for self-hosted deployments
+
+### D.5 Options Not Recommended
+
+| Network Server | Reason Not Recommended |
+|----------------|------------------------|
+| **The Things Network (TTN)** | No direct AWS IoT Core integration; requires webhook bridge or MQTT subscription from AWS side |
+| **Helium** | Decentralised coverage model; no native AWS IoT integration; coverage dependent on community hotspots |
+
+### D.6 Decision Matrix
+
+| Criterion | Milesight Built-in NS | ChirpStack |
+|-----------|----------------------|------------|
+| **Setup Complexity** | Low | Medium |
+| **AWS IoT Integration** | Native MQTT | Native MQTT |
+| **X.509 Support** | ✅ Yes | ✅ Yes |
+| **Central Management** | ❌ Per-gateway | ✅ Yes |
+| **Multi-site Visibility** | ❌ Limited | ✅ Yes |
+| **Infrastructure Required** | Gateway only | Server/container |
+| **Best For** | 1-3 sites, <30 sensors | 3+ sites, 30+ sensors |
+
+### D.7 Recommendation
+
+**For initial SMDH deployments:** Start with **Milesight UG65 built-in Network Server**. This provides the fastest path to production with minimal infrastructure.
+
+**For scaled deployments:** Migrate to **ChirpStack** when:
+- Managing more than 3 sites per tenant
+- Requiring centralised device visibility
+- Needing automated device provisioning via API
+- Operating 30+ sensors across multiple locations
+
+Both options satisfy the core SMDH requirement: authenticated MQTT publishing to AWS IoT Core using X.509 certificates, with the gateway (not the sensor) holding the credentials.
